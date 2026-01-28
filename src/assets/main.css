@@ -1,0 +1,186 @@
+:root {
+  --color-primary: #e3ff04;
+  --color-primary-hover: #b8cc00;
+  /* Slightly darker lime */
+  --color-bg-dark: #000000;
+  --color-bg-card: #121212;
+  /* Very dark grey for cards */
+  --color-bg-lighter: #1e1e1e;
+  /* Lighter grey for inputs/hover */
+  --color-text-light: #ffffff;
+  --color-text-muted: #a0a0a0;
+  --color-border: #333333;
+
+  --font-primary: 'Unbounded', sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  position: relative;
+  font-weight: normal;
+}
+
+body {
+  min-height: 100vh;
+  color: var(--color-text-light);
+  background: var(--color-bg-dark);
+  font-family: var(--font-primary);
+  font-size: 16px;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+#app {
+  display: flex;
+  width: 100%;
+  min-height: 100vh;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+  transition: 0.3s;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+}
+
+input,
+select,
+textarea {
+  background: var(--color-bg-lighter);
+  color: var(--color-text-light);
+  border: 1px solid var(--color-border);
+  font-family: inherit;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid var(--color-primary);
+  border-color: transparent;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+@media (max-width: 768px) {
+  html {
+    font-size: 14px;
+    /* Scale down base size */
+  }
+
+  h1 {
+    font-size: 1.75rem;
+    /* Smaller headers */
+  }
+}
+
+.table-responsive {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+
+  /* Hide headers */
+  .data-table thead,
+  .tickets-table thead {
+    display: none;
+  }
+
+  /* Card styling for rows */
+  .data-table tbody tr,
+  .tickets-table tbody tr {
+    display: flex;
+    flex-direction: column;
+    background-color: rgba(255, 255, 255, 0.05);
+    /* Lighter card background */
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--color-border);
+  }
+
+  .data-table td,
+  .tickets-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .data-table td:last-child,
+  .tickets-table td:last-child {
+    border-bottom: none;
+  }
+
+  /* Add labels using data attributes or specific styling */
+  /* Financial Table Specifics */
+  .data-table td:nth-child(1) {
+    /* Project Name */
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--color-primary);
+    order: -1;
+    /* Ensure name is always first */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 0.5rem;
+  }
+
+  .data-table td:nth-child(2)::before {
+    content: "Presupuesto:";
+    color: var(--color-text-muted);
+  }
+
+  .data-table td:nth-child(3)::before {
+    content: "Coste:";
+    color: var(--color-text-muted);
+  }
+
+  .data-table td:nth-child(4)::before {
+    content: "Margen:";
+    color: var(--color-text-muted);
+  }
+
+  /* Support Table Specifics */
+  .tickets-table td:nth-child(1) {
+    /* ID */
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    margin-bottom: 0.25rem;
+  }
+
+  .tickets-table td:nth-child(2) {
+    /* Subject/Client */
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .tickets-table td:nth-child(3) {
+    /* Priority */
+    justify-content: flex-start;
+    /* Align left */
+    margin-top: 0.5rem;
+  }
+}
