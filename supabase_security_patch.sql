@@ -1,65 +1,45 @@
--- ============================================================
--- SECURITY PATCH — Tane Solutions Dashboard
--- Ejecutar en Supabase > SQL Editor
--- ============================================================
+-- FIX: Infinite recursion in RLS policies for "perfiles" table
+-- This script creates a security-definer function to safely retrieve 
+-- user roles without triggering recursive RLS checks.
 
--- ============================================================
--- 1. TABLA PERFILES — Activar RLS y añadir políticas
--- ============================================================
--- Sin esto, cualquier usuario autenticado puede leer/modificar
--- los perfiles de otros usuarios.
+-- 1. Remove conflicting policies
+DROP POLICY IF EXISTS "Perfiles editables por admins" ON perfiles;
+DROP POLICY IF EXISTS "Usuarios ven su propio perfil" ON perfiles;
+DROP POLICY IF EXISTS "Admins ven todos los perfiles" ON perfiles;
 
+-- 2. Create the role-fetching helper
+-- SECURITY DEFINER allows this function to bypass RLS checks for its internal query.
+CREATE OR REPLACE FUNCTION public.get_auth_user_role()
+RETURNS text AS $$
+DECLARE
+  user_role text;
+BEGIN
+  SELECT rol INTO user_role 
+  FROM public.perfiles 
+  WHERE id = auth.uid();
+  
+  RETURN user_role;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 3. Ensure RLS is enabled
 ALTER TABLE perfiles ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "perfiles_admin_all"    ON perfiles;
-DROP POLICY IF EXISTS "perfiles_self_read"    ON perfiles;
-DROP POLICY IF EXISTS "perfiles_self_update"  ON perfiles;
+-- 4. Apply clean, non-recursive policies
+CREATE POLICY "Lectura de perfiles segura"
+ON perfiles FOR SELECT
+TO authenticated
+USING (
+  id = auth.uid() 
+  OR get_auth_user_role() = 'ADMIN'
+);
 
--- Admin tiene acceso total
-CREATE POLICY "perfiles_admin_all"
-  ON perfiles FOR ALL
-  USING (get_my_role() = 'ADMIN');
-
--- Cada usuario solo puede leer su propio perfil
-CREATE POLICY "perfiles_self_read"
-  ON perfiles FOR SELECT
-  USING (auth.uid() = id);
-
--- Cada usuario solo puede actualizar su propio perfil
-CREATE POLICY "perfiles_self_update"
-  ON perfiles FOR UPDATE
-  USING (auth.uid() = id);
-
--- ============================================================
--- 2. SERVIDORES — Requerir autenticación para leer
--- ============================================================
--- La política anterior "servidores_todos_leen" permite
--- acceso anónimo (USING (true)).
-
-DROP POLICY IF EXISTS "servidores_todos_leen" ON servidores;
-
-CREATE POLICY "servidores_auth_read"
-  ON servidores FOR SELECT
-  USING (auth.uid() IS NOT NULL);
-
--- ============================================================
--- 3. FUNCIONES HELPER — Restringir a usuarios autenticados
--- ============================================================
--- get_my_role() y get_my_client_id() no deben ser invocables
--- por usuarios anónimos.
-
-REVOKE EXECUTE ON FUNCTION get_my_role()      FROM PUBLIC, anon;
-REVOKE EXECUTE ON FUNCTION get_my_client_id() FROM PUBLIC, anon;
-GRANT  EXECUTE ON FUNCTION get_my_role()      TO authenticated;
-GRANT  EXECUTE ON FUNCTION get_my_client_id() TO authenticated;
-
--- ============================================================
--- 4. VERIFICACIÓN — Confirmar RLS activo en todas las tablas
--- ============================================================
-SELECT
-  tablename,
-  rowsecurity AS rls_enabled
-FROM pg_tables
-WHERE schemaname = 'public'
-ORDER BY tablename;
--- Todas las filas deben mostrar rls_enabled = true
+CREATE POLICY "Escritura de perfiles segura"
+ON perfiles FOR ALL
+TO authenticated
+USING (
+  get_auth_user_role() = 'ADMIN'
+)
+WITH CHECK (
+  get_auth_user_role() = 'ADMIN'
+);
