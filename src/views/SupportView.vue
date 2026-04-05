@@ -1,25 +1,121 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import DashboardCard from '../components/DashboardCard.vue';
+import {
+  useSupportData, createTicket, updateTicket, deleteTicket,
+  createServidor, updateServidor, deleteServidor,
+  SERVIDOR_COLORS, type Ticket, type Servidor,
+} from '../services/support';
+import { useClientsList } from '../services/clients';
 
-const kpis = [
-  { label: 'Incidencias Abiertas', value: '3', trend: 'Bajo control', color: '#e3ff04' },
-  { label: 'Tiempo 1ª Respuesta', value: '45 min', trend: '-10 min vs objetivo', color: '#e3ff04' },
-  { label: 'Tasa de Cancelación', value: '1.2%', trend: '+0.1%', color: '#e3ff04' },
-  { label: 'Satisfacción Cliente', value: '4.8/5', trend: 'Estable', color: '#ffffff' },
-];
+const { tickets, servidores, kpis, loading } = useSupportData();
+const { clients } = useClientsList();
 
-const servers = [
-  { name: 'Web Principal (tanesolutions.com)', status: 'Online', uptime: '99.9%', color: '#e3ff04' },
-  { name: 'Panel Clientes (app.tane.so)', status: 'Online', uptime: '99.5%', color: '#e3ff04' },
-  { name: 'Servidor Correo', status: 'Mantenimiento', uptime: '98.2%', color: '#ffa500' },
-  { name: 'Base de Datos Primaria', status: 'Online', uptime: '100%', color: '#e3ff04' },
-];
+// ── Tickets ──────────────────────────────────────────────────────────────────
+const showTicketModal = ref(false);
+const saving = ref(false);
+const editingId = ref<number | null>(null);
 
-const tickets = [
-  { id: '#1024', subject: 'Error en formulario de contacto', client: 'Alpha Ind', priority: 'Alta', time: 'Hace 2h' },
-  { id: '#1023', subject: 'Actualización de contenido', client: 'Gamma Ltd', priority: 'Baja', time: 'Hace 5h' },
-  { id: '#1022', subject: 'Problemas de acceso', client: 'Epsilon', priority: 'Media', time: 'Hace 1d' },
-];
+const emptyForm = (): Partial<Ticket> => ({
+  asunto: '', descripcion: '', cliente_id: '', prioridad: 'Media', estado: 'Abierto',
+});
+const form = ref<Partial<Ticket>>(emptyForm());
+
+const openNew = () => { form.value = emptyForm(); editingId.value = null; showTicketModal.value = true; };
+const openEdit = (t: Ticket) => { form.value = { ...t }; editingId.value = t.id; showTicketModal.value = true; };
+
+const saveTicket = async () => {
+  saving.value = true;
+  try {
+    const payload = { ...form.value };
+    if (!payload.cliente_id) delete payload.cliente_id;
+    if (editingId.value !== null) {
+      const updated = await updateTicket(editingId.value, payload);
+      const idx = tickets.value.findIndex(t => t.id === editingId.value);
+      if (idx !== -1) tickets.value[idx] = updated;
+    } else {
+      const created = await createTicket(payload);
+      tickets.value.unshift(created);
+    }
+    showTicketModal.value = false;
+  } finally { saving.value = false; }
+};
+
+const cambiarEstadoTicket = async (t: Ticket, estado: string) => {
+  const updates: Partial<Ticket> = { estado: estado as Ticket['estado'] };
+  if (estado === 'En proceso' && !t.fecha_primera_respuesta) {
+    updates.fecha_primera_respuesta = new Date().toISOString();
+  }
+  if (estado === 'Cerrado') {
+    updates.fecha_cierre = new Date().toISOString();
+    if (!t.fecha_primera_respuesta) updates.fecha_primera_respuesta = new Date().toISOString();
+  }
+  const updated = await updateTicket(t.id, updates);
+  const idx = tickets.value.findIndex(x => x.id === t.id);
+  if (idx !== -1) tickets.value[idx] = updated;
+};
+
+const setSatisfaccion = async (t: Ticket, val: number) => {
+  const updated = await updateTicket(t.id, { satisfaccion: val });
+  const idx = tickets.value.findIndex(x => x.id === t.id);
+  if (idx !== -1) tickets.value[idx] = updated;
+};
+
+const confirmDeleteTicket = async (t: Ticket) => {
+  if (!confirm(`¿Eliminar ticket #${t.id} "${t.asunto}"?`)) return;
+  await deleteTicket(t.id);
+  tickets.value = tickets.value.filter(x => x.id !== t.id);
+};
+
+// ── Servidores ────────────────────────────────────────────────────────────────
+const showServidorModal = ref(false);
+const savingServidor = ref(false);
+const editingServidorId = ref<string | null>(null);
+const emptyServidor = (): Partial<Servidor> => ({ nombre: '', estado: 'Online', uptime_porcentaje: 100 });
+const servidorForm = ref<Partial<Servidor>>(emptyServidor());
+
+const openNewServidor = () => { servidorForm.value = emptyServidor(); editingServidorId.value = null; showServidorModal.value = true; };
+const openEditServidor = (s: Servidor) => { servidorForm.value = { ...s }; editingServidorId.value = s.id; showServidorModal.value = true; };
+
+const saveServidor = async () => {
+  savingServidor.value = true;
+  try {
+    if (editingServidorId.value) {
+      const updated = await updateServidor(editingServidorId.value, servidorForm.value);
+      const idx = servidores.value.findIndex(s => s.id === editingServidorId.value);
+      if (idx !== -1) servidores.value[idx] = updated;
+    } else {
+      const created = await createServidor(servidorForm.value);
+      servidores.value.push(created);
+    }
+    showServidorModal.value = false;
+  } finally { savingServidor.value = false; }
+};
+
+const confirmDeleteServidor = async (s: Servidor) => {
+  if (!confirm(`¿Eliminar servidor "${s.nombre}"?`)) return;
+  await deleteServidor(s.id);
+  servidores.value = servidores.value.filter(x => x.id !== s.id);
+};
+
+const cambiarEstadoServidor = async (id: string, estado: string) => {
+  const updated = await updateServidor(id, { estado: estado as any });
+  const idx = servidores.value.findIndex(s => s.id === id);
+  if (idx !== -1) servidores.value[idx] = updated;
+};
+
+// ── Utils ────────────────────────────────────────────────────────────────────
+const prioridadColor: Record<string, string> = {
+  Alta: '#ff4444', Media: '#ffa500', Baja: '#e3ff04',
+};
+const formatTime = (iso: string) => {
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = (now.getTime() - d.getTime()) / 60000;
+  if (diff < 60) return `Hace ${Math.round(diff)} min`;
+  if (diff < 1440) return `Hace ${Math.round(diff / 60)}h`;
+  return `Hace ${Math.round(diff / 1440)}d`;
+};
 </script>
 
 <template>
@@ -29,232 +125,234 @@ const tickets = [
       <span class="subtitle">Satisfacción y Retención</span>
     </div>
 
-    <!-- KPIs Grid -->
-    <div class="metrics-grid">
-      <DashboardCard v-for="kpi in kpis" :key="kpi.label">
-        <div class="kpi-item">
-          <span class="kpi-label">{{ kpi.label }}</span>
-          <div class="kpi-value-row">
-            <span class="kpi-value">{{ kpi.value }}</span>
-            <span class="kpi-trend" :style="{ color: kpi.color }">{{ kpi.trend }}</span>
+    <div v-if="loading" class="loading-state">Cargando datos...</div>
+
+    <template v-else>
+      <!-- KPIs automáticos -->
+      <div class="metrics-grid">
+        <DashboardCard v-for="kpi in kpis" :key="kpi.label">
+          <div class="kpi-item">
+            <span class="kpi-label">{{ kpi.label }}</span>
+            <div class="kpi-value-row">
+              <span class="kpi-value">{{ kpi.value }}</span>
+              <span class="kpi-trend" :style="{ color: kpi.color }">{{ kpi.trend }}</span>
+            </div>
+          </div>
+        </DashboardCard>
+      </div>
+
+      <div class="content-grid">
+        <!-- Servidores -->
+        <DashboardCard title="Estado de Servidores">
+          <template #actions>
+            <button class="btn-edit-action" @click="openNewServidor">+ Añadir</button>
+          </template>
+          <div class="servers-list">
+            <div v-for="s in servidores" :key="s.id" class="server-item">
+              <div class="server-info">
+                <div class="server-name-row">
+                  <div class="status-dot" :style="{ backgroundColor: SERVIDOR_COLORS[s.estado] }"></div>
+                  <span class="server-name">{{ s.nombre }}</span>
+                </div>
+                <span class="server-uptime">Uptime: {{ s.uptime_porcentaje }}%</span>
+              </div>
+              <div class="server-right">
+                <select
+                  class="estado-select"
+                  :value="s.estado"
+                  :style="{ color: SERVIDOR_COLORS[s.estado] }"
+                  @change="cambiarEstadoServidor(s.id, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option>Online</option>
+                  <option>Mantenimiento</option>
+                  <option>Offline</option>
+                </select>
+                <button class="btn-icon-text" @click="openEditServidor(s)" title="Editar">✏️</button>
+                <button class="btn-icon-text danger" @click="confirmDeleteServidor(s)" title="Eliminar">🗑️</button>
+              </div>
+            </div>
+          </div>
+        </DashboardCard>
+
+        <!-- Tickets -->
+        <DashboardCard title="Tickets de Soporte">
+          <template #actions>
+            <button class="btn-edit-action" @click="openNew">+ Nuevo Ticket</button>
+          </template>
+          <div v-if="tickets.length === 0" class="empty-state">Sin tickets registrados</div>
+          <div v-else class="tickets-list">
+            <div v-for="t in tickets" :key="t.id" class="ticket-item" :class="{ closed: t.estado === 'Cerrado' }">
+              <div class="ticket-top">
+                <span class="ticket-id">#{{ t.id }}</span>
+                <span class="ticket-time">{{ formatTime(t.fecha_creacion) }}</span>
+              </div>
+              <div class="ticket-subject">{{ t.asunto }}</div>
+              <div class="ticket-meta">
+                <span class="muted">{{ t.clientes?.nombre ?? 'Sin cliente' }}</span>
+                <span class="priority-badge" :style="{ color: prioridadColor[t.prioridad], borderColor: prioridadColor[t.prioridad] }">
+                  {{ t.prioridad }}
+                </span>
+              </div>
+              <div class="ticket-actions">
+                <select
+                  class="estado-select"
+                  :value="t.estado"
+                  @change="cambiarEstadoTicket(t, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option>Abierto</option>
+                  <option>En proceso</option>
+                  <option>Cerrado</option>
+                </select>
+                <div v-if="t.estado === 'Cerrado' && !t.satisfaccion" class="sat-row">
+                  <span class="muted">Valoración:</span>
+                  <button v-for="n in [1,2,3,4,5]" :key="n" class="sat-btn" @click="setSatisfaccion(t, n)">{{ n }}★</button>
+                </div>
+                <span v-if="t.satisfaccion" class="sat-value">{{ t.satisfaccion }}★ valorado</span>
+                <button class="btn-icon-text" @click="openEdit(t)" title="Editar">✏️</button>
+                <button class="btn-icon-text danger" @click="confirmDeleteTicket(t)" title="Eliminar">🗑️</button>
+              </div>
+            </div>
+          </div>
+        </DashboardCard>
+      </div>
+    </template>
+
+    <!-- Modal: Servidor -->
+    <div class="modal-overlay" v-if="showServidorModal" @click.self="showServidorModal = false">
+      <div class="modal-box">
+        <p class="modal-title">{{ editingServidorId ? 'Editar Servidor' : 'Nuevo Servidor' }}</p>
+        <div class="form-group">
+          <label>Nombre *</label>
+          <input v-model="servidorForm.nombre" class="form-input" placeholder="ej: Web Principal (tanesolutions.com)" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Estado</label>
+            <select v-model="servidorForm.estado" class="form-input">
+              <option>Online</option>
+              <option>Mantenimiento</option>
+              <option>Offline</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Uptime (%)</label>
+            <input v-model.number="servidorForm.uptime_porcentaje" type="number" min="0" max="100" step="0.1" class="form-input" />
           </div>
         </div>
-      </DashboardCard>
+        <div class="modal-actions">
+          <button class="btn-text" @click="showServidorModal = false">Cancelar</button>
+          <button class="btn-primary" @click="saveServidor" :disabled="savingServidor || !servidorForm.nombre">
+            {{ savingServidor ? 'Guardando...' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
     </div>
 
-    <!-- Main Content -->
-    <div class="content-grid">
-      <!-- Server Status -->
-      <DashboardCard title="Estado de Servidores">
-        <div class="servers-list">
-            <div v-for="server in servers" :key="server.name" class="server-item">
-                <div class="server-info">
-                    <div class="server-name-row">
-                        <div class="status-dot" :style="{ backgroundColor: server.color }"></div>
-                        <span class="server-name">{{ server.name }}</span>
-                    </div>
-                    <span class="server-uptime">Uptime: {{ server.uptime }}</span>
-                </div>
-                <span class="status-text" :style="{ color: server.color }">{{ server.status }}</span>
-            </div>
+    <!-- Modal: Ticket -->
+    <div class="modal-overlay" v-if="showTicketModal" @click.self="showTicketModal = false">
+      <div class="modal-box">
+        <p class="modal-title">{{ editingId !== null ? 'Editar Ticket' : 'Nuevo Ticket' }}</p>
+        <div class="form-group">
+          <label>Asunto *</label>
+          <input v-model="form.asunto" class="form-input" />
         </div>
-      </DashboardCard>
-
-      <!-- Recent Tickets -->
-      <DashboardCard title="Últimos Tickets">
-        <div class="table-responsive">
-            <table class="tickets-table">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Asunto</th>
-                        <th>Prioridad</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="ticket in tickets" :key="ticket.id">
-                        <td class="ticket-id">{{ ticket.id }}</td>
-                        <td>
-                            <div class="ticket-subject">{{ ticket.subject }}</div>
-                            <div class="ticket-client">{{ ticket.client }} • {{ ticket.time }}</div>
-                        </td>
-                        <td>
-                            <span class="priority-badge" :class="ticket.priority.toLowerCase()">
-                                {{ ticket.priority }}
-                            </span>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+        <div class="form-group">
+          <label>Descripción</label>
+          <textarea v-model="form.descripcion" class="form-input" rows="3"></textarea>
         </div>
-      </DashboardCard>
+        <div class="form-group">
+          <label>Cliente</label>
+          <select v-model="form.cliente_id" class="form-input">
+            <option value="">— Sin cliente —</option>
+            <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Prioridad</label>
+            <select v-model="form.prioridad" class="form-input">
+              <option>Alta</option><option>Media</option><option>Baja</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Estado</label>
+            <select v-model="form.estado" class="form-input">
+              <option>Abierto</option><option>En proceso</option><option>Cerrado</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-text" @click="showTicketModal = false">Cancelar</button>
+          <button class="btn-primary" @click="saveTicket" :disabled="saving || !form.asunto">
+            {{ saving ? 'Guardando...' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
     </div>
-    
   </div>
 </template>
 
 <style scoped>
-/* Reusing common styles */
-.view-container {
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-}
+.view-container { display: flex; flex-direction: column; gap: 2rem; }
+.header h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+.subtitle { color: var(--color-text-muted); font-size: 1.1rem; }
+.loading-state { color: var(--color-text-muted); font-style: italic; padding: 2rem 0; }
 
-.header h1 {
-  font-size: 2rem;
-  margin-bottom: 0.5rem;
-}
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; }
+.kpi-item { display: flex; flex-direction: column; }
+.kpi-label { font-size: 0.9rem; color: var(--color-text-muted); margin-bottom: 0.5rem; }
+.kpi-value { font-size: 2rem; font-weight: 700; margin-right: 1rem; }
+.kpi-trend { font-size: 0.8rem; font-weight: 600; }
+.kpi-value-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; }
 
-.subtitle {
-  color: var(--color-text-muted);
-  font-size: 1.1rem;
-}
+.content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+@media (max-width: 900px) { .content-grid { grid-template-columns: 1fr; } }
 
-.metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.5rem;
-}
+.servers-list { display: flex; flex-direction: column; gap: 0.75rem; }
+.server-item { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: rgba(255,255,255,0.02); border-radius: 8px; }
+.server-info { display: flex; flex-direction: column; gap: 0.25rem; }
+.server-name-row { display: flex; align-items: center; gap: 0.75rem; }
+.status-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.server-name { font-weight: 600; }
+.server-uptime { font-size: 0.8rem; color: var(--color-text-muted); margin-left: 1.5rem; }
 
-.kpi-item {
-  display: flex;
-  flex-direction: column;
-}
+.btn-edit-action { background: transparent; border: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 0.8rem; padding: 0.3rem 0.7rem; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
+.btn-edit-action:hover { border-color: var(--color-primary); color: var(--color-primary); }
 
-.kpi-label {
-    font-size: 0.9rem;
-    color: var(--color-text-muted);
-    margin-bottom: 0.5rem;
-}
+.tickets-list { display: flex; flex-direction: column; gap: 0.75rem; max-height: 450px; overflow-y: auto; }
+.ticket-item { background: rgba(255,255,255,0.03); border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem; }
+.ticket-item.closed { opacity: 0.55; }
+.ticket-top { display: flex; justify-content: space-between; margin-bottom: 0.3rem; }
+.ticket-id { color: var(--color-primary); font-family: monospace; font-weight: 700; font-size: 0.85rem; }
+.ticket-time { font-size: 0.78rem; color: var(--color-text-muted); }
+.ticket-subject { font-weight: 600; margin-bottom: 0.4rem; }
+.ticket-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; }
+.muted { font-size: 0.82rem; color: var(--color-text-muted); }
+.priority-badge { font-size: 0.75rem; font-weight: 700; border: 1px solid; padding: 0.15rem 0.5rem; border-radius: 10px; }
+.ticket-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.estado-select { background: transparent; border: 1px solid var(--color-border); border-radius: 12px; padding: 0.25rem 0.5rem; font-size: 0.8rem; font-weight: 700; cursor: pointer; outline: none; color-scheme: dark; color: var(--color-text-light); }
+.sat-row { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; }
+.sat-btn { background: rgba(255,255,255,0.05); border: 1px solid var(--color-border); color: var(--color-text-muted); padding: 0.15rem 0.4rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+.sat-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.sat-value { font-size: 0.82rem; color: var(--color-primary); font-weight: 700; }
+.btn-icon-text { background: transparent; border: none; cursor: pointer; font-size: 0.9rem; padding: 0.25rem; border-radius: 4px; }
+.btn-icon-text:hover { background: rgba(255,255,255,0.1); }
+.btn-icon-text.danger:hover { background: rgba(255,68,68,0.15); }
+.server-right { display: flex; align-items: center; gap: 0.5rem; }
 
-.kpi-value {
-    font-size: 2rem;
-    font-weight: 700;
-    margin-right: 1rem;
-}
+.empty-state { color: var(--color-text-muted); text-align: center; padding: 2rem; font-style: italic; }
 
-.kpi-trend {
-    font-size: 0.8rem;
-    font-weight: 600;
-}
-
-.content-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-}
-
-@media (max-width: 900px) {
-    .content-grid {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* Server Status */
-.servers-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-}
-
-.server-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem;
-    background-color: rgba(255,255,255,0.02);
-    border-radius: 8px;
-}
-
-.server-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.server-name-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-
-.status-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    box-shadow: 0 0 10px currentColor; /* Glow effect */
-}
-
-.server-name {
-    font-weight: 600;
-}
-
-.server-uptime {
-    font-size: 0.8rem;
-    color: var(--color-text-muted);
-    margin-left: 1.5rem; /* Align with text */
-}
-
-.status-text {
-    font-weight: 700;
-    font-size: 0.9rem;
-}
-
-/* Tickets Table */
-.tickets-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.tickets-table th, .tickets-table td {
-    padding: 1rem 0.5rem;
-    text-align: left;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-}
-
-.tickets-table th {
-    color: var(--color-text-muted);
-    font-size: 0.9rem;
-    font-weight: 600;
-}
-
-.ticket-id {
-    color: var(--color-primary);
-    font-family: monospace;
-}
-
-.ticket-subject {
-    font-weight: 500;
-    margin-bottom: 0.25rem;
-}
-
-.ticket-client {
-    font-size: 0.8rem;
-    color: var(--color-text-muted);
-}
-
-.priority-badge {
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    background-color: #333;
-}
-
-.priority-badge.alta {
-    background-color: rgba(255, 68, 68, 0.2);
-    color: #ff4444;
-}
-
-.priority-badge.media {
-    background-color: rgba(255, 165, 0, 0.2);
-    color: #ffa500;
-}
-
-.priority-badge.baja {
-    background-color: rgba(227, 255, 4, 0.2);
-    color: var(--color-primary);
-}
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+.modal-box { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 12px; padding: 2rem; width: 90%; max-width: 480px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; }
+.modal-title { font-size: 1.2rem; font-weight: 700; margin: 0 0 1.5rem; color: var(--color-text-light); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--color-border); }
+.form-row { display: flex; gap: 0.75rem; }
+.form-row .form-group { flex: 1; }
+.form-group { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
+.form-group label { font-size: 0.85rem; font-weight: 600; color: var(--color-text-muted); }
+.form-input { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.7rem 1rem; border-radius: 6px; font-family: inherit; font-size: 0.95rem; outline: none; width: 100%; box-sizing: border-box; resize: vertical; color-scheme: dark; }
+.form-input:focus { border-color: var(--color-primary); }
+.btn-text { background: transparent; border: none; color: var(--color-primary); cursor: pointer; font-size: 0.9rem; }
+.btn-primary { background-color: var(--color-primary); color: #000; font-weight: 700; padding: 0.6rem 1.4rem; border-radius: 6px; border: none; cursor: pointer; }
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 </style>

@@ -1,19 +1,47 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import { RouterLink } from 'vue-router';
+import { ref, computed, onMounted } from 'vue';
+import { RouterLink, useRouter } from 'vue-router';
+import { authStore, logout } from '../../store/auth';
+import { fetchAlertasCount } from '../../services/alerts';
 
-// Spanish labels and correct routes
-const navItems = [
+const router = useRouter();
+
+const alertasCount = ref(0);
+
+onMounted(async () => {
+  if (authStore.role === 'ADMIN') {
+    alertasCount.value = await fetchAlertasCount().catch(() => 0);
+  }
+});
+
+// Admin Routes
+const adminItems = [
+  { name: 'Alertas', icon: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z', link: '/alerts' },
   { name: 'Comercial', icon: 'M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z', link: '/commercial' },
   { name: 'Financiero', icon: 'M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z', link: '/financial' },
   { name: 'Operaciones', icon: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z', link: '/operations' },
   { name: 'Soporte', icon: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z', link: '/support' },
+  { name: 'Clientes (Admin)', icon: 'M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z', link: '/clients' }
 ];
+
+// Client Routes
+const clientItems = [
+  { name: 'Panel Cliente', icon: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z', link: '/client-panel' }
+];
+
+const navItems = computed(() => {
+    return authStore.role === 'ADMIN' ? adminItems : clientItems;
+});
 
 const expanded = ref(false); // Mobile toggle state
 
 const toggleSidebar = () => {
     expanded.value = !expanded.value;
+};
+
+const handleLogout = async () => {
+    await logout();
+    router.push('/login');
 };
 </script>
 
@@ -26,33 +54,43 @@ const toggleSidebar = () => {
     
     <aside class="sidebar" :class="{ 'expanded': expanded }">
         <div class="brand">
-            <div class="logo"><img class="logo-img" src="/public/logo.png" alt="Logo"></div>
+            <div class="logo"><img class="logo-img" src="/logo-verde.png" alt="Logo"></div>
             <span class="brand-name">TANE SOLUTIONS</span>
             <button class="close-sidebar" @click="toggleSidebar">×</button>
         </div>
         
         <nav class="nav">
-            <RouterLink 
-            v-for="item in navItems" 
+            <RouterLink
+            v-for="item in navItems"
             :key="item.name"
             :to="item.link"
             class="nav-item"
             active-class="active"
-            @click="expanded = false" 
+            @click="expanded = false"
             >
             <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
                 <path :d="item.icon" />
             </svg>
             <span class="label">{{ item.name }}</span>
+            <span v-if="item.link === '/alerts' && alertasCount > 0" class="alert-badge">
+                {{ alertasCount > 9 ? '9+' : alertasCount }}
+            </span>
             </RouterLink>
         </nav>
 
         <div class="user-profile">
-        <div class="avatar">JS</div>
-        <div class="user-info">
-            <span class="name">John Sandoval</span>
-            <span class="role">Admin</span>
-        </div>
+            <div class="user-info-container">
+                <div class="avatar">{{ authStore.user?.name.charAt(0) || 'U' }}</div>
+                <div class="user-info">
+                    <span class="name">{{ authStore.user?.name || 'Usuario' }}</span>
+                    <span class="role">{{ authStore.role === 'ADMIN' ? 'Agencia' : 'Cliente Titular' }}</span>
+                </div>
+            </div>
+            <button class="logout-btn" @click="handleLogout" title="Cerrar Sesión">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                    <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
+                </svg>
+            </button>
         </div>
     </aside>
     
@@ -132,13 +170,11 @@ const toggleSidebar = () => {
 .logo {
   width: 40px;
   height: 40px;
-  background-color: var(--color-primary);
-  color: var(--color-bg-dark);
-  font-weight: 900;
+  background-color: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px; /* Square with slight radius */
+  border-radius: 4px;
 }
 
 .logo-img {
@@ -206,21 +242,27 @@ const toggleSidebar = () => {
 .user-profile {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  justify-content: space-between;
   padding-top: 2rem;
   border-top: 1px solid var(--color-border);
+}
+
+.user-info-container {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
 }
 
 .avatar {
   width: 40px;
   height: 40px;
-  background-color: #333;
+  background-color: var(--color-primary);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
-  color: #fff;
+  font-weight: 900;
+  color: #000;
 }
 
 .user-info {
@@ -236,5 +278,38 @@ const toggleSidebar = () => {
 .role {
   font-size: 0.8rem;
   color: var(--color-text-muted);
+}
+
+.logout-btn {
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+}
+
+.logout-btn:hover {
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.1);
+}
+
+.alert-badge {
+    margin-left: auto;
+    background: #ff4444;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 5px;
 }
 </style>

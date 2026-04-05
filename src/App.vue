@@ -1,11 +1,23 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+import { useRoute } from 'vue-router';
 import Sidebar from './components/layout/Sidebar.vue';
+import { authStore } from './store/auth';
+
+const route = useRoute();
+const isUpdatePassword = computed(() => {
+  return route.path.includes('update-password') || window.location.pathname.includes('update-password');
+});
+
+const showSidebar = computed(() => {
+  return authStore.isAuthenticated && !isUpdatePassword.value;
+});
 </script>
 
 <template>
-  <div class="app-layout">
-    <Sidebar />
-    <main class="main-content">
+  <div class="app-layout" :data-recovery="isUpdatePassword">
+    <Sidebar v-if="showSidebar" />
+    <main class="main-content" :style="!showSidebar ? 'padding: 0;' : ''">
       <RouterView />
     </main>
   </div>

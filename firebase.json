@@ -1,0 +1,17 @@
+{
+  "hosting": {
+    "site": "tanesolutions-d86dc-6261c",
+    "public": "dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

@@ -3,7 +3,7 @@ import DashboardCard from '../components/DashboardCard.vue';
 
 const stats = [
   { label: 'Total Users', value: '12,345', trend: '+12%', color: '#e3ff04' },
-  { label: 'Revenue', value: '$45.2k', trend: '+8%', color: '#e3ff04' },
+  { label: 'Revenue', value: '45.200 €', trend: '+8%', color: '#e3ff04' },
   { label: 'Active Projects', value: '24', trend: '-2%', color: '#ff4444' },
   { label: 'System Status', value: '98%', trend: 'Stable', color: '#e3ff04' },
 ];

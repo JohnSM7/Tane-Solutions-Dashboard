@@ -1,19 +1,80 @@
 <script setup lang="ts">
+import { ref, computed } from 'vue';
 import DashboardCard from '../components/DashboardCard.vue';
+import {
+  useCommercialData, createLead, updateLead, deleteLead,
+  PIPELINE_STAGES, ESTADO_COLORS, type Lead,
+} from '../services/commercial';
 
+const { leads, kpis, pipeline, topServices, loading } = useCommercialData();
 
-const kpis = [
-  { label: 'Leads Nuevos (Semana)', value: '18', trend: '+12%', color: '#e3ff04' },
-  { label: 'Tasa de Conversión', value: '35%', trend: '+5%', color: '#e3ff04' },
-  { label: 'Valor Promedio', value: '$2,500', trend: '', color: '#ffffff' },
-  { label: 'CAC', value: '$150', trend: '-2%', color: '#e3ff04' },
-];
+// ── Modal nuevo/editar lead ──────────────────────────────────────────────────
+const showModal = ref(false);
+const saving = ref(false);
+const editingId = ref<string | null>(null);
 
-const topServices = [
-  { name: 'Pack Starter', sales: 12, value: '45%' },
-  { name: 'Desarrollo a Medida', sales: 5, value: '30%' },
-  { name: 'Mantenimiento Premium', sales: 8, value: '25%' },
-];
+const emptyForm = (): Partial<Lead> => ({
+  nombre: '', empresa: '', email: '', telefono: '',
+  fuente: 'Orgánico', servicio: '', estado: 'Nuevo',
+  valor_estimado: 0, cac: 0, notas: '',
+});
+const form = ref<Partial<Lead>>(emptyForm());
+
+const openNew = () => {
+  form.value = emptyForm();
+  editingId.value = null;
+  showModal.value = true;
+};
+
+const openEdit = (lead: Lead) => {
+  form.value = { ...lead };
+  editingId.value = lead.id;
+  showModal.value = true;
+};
+
+const saveLead = async () => {
+  saving.value = true;
+  try {
+    if (editingId.value) {
+      const updated = await updateLead(editingId.value, form.value);
+      const idx = leads.value.findIndex(l => l.id === editingId.value);
+      if (idx !== -1) leads.value[idx] = updated;
+    } else {
+      const created = await createLead(form.value);
+      leads.value.unshift(created);
+    }
+    showModal.value = false;
+  } finally {
+    saving.value = false;
+  }
+};
+
+const confirmDelete = async (lead: Lead) => {
+  if (!confirm(`¿Eliminar el lead "${lead.nombre}"?`)) return;
+  await deleteLead(lead.id);
+  leads.value = leads.value.filter(l => l.id !== lead.id);
+};
+
+// ── Cambio rápido de estado desde la tabla ───────────────────────────────────
+const changeEstado = async (lead: Lead, estado: string) => {
+  const updates: Partial<Lead> = { estado: estado as Lead['estado'] };
+  if (estado === 'Cerrado-Ganado' || estado === 'Cerrado-Perdido') {
+    updates.fecha_cierre = new Date().toISOString();
+  }
+  const updated = await updateLead(lead.id, updates);
+  const idx = leads.value.findIndex(l => l.id === lead.id);
+  if (idx !== -1) leads.value[idx] = updated;
+};
+
+// ── Filtros ──────────────────────────────────────────────────────────────────
+const filtroEstado = ref('');
+const filteredLeads = computed(() => {
+  if (!filtroEstado.value) return leads.value;
+  return leads.value.filter(l => l.estado === filtroEstado.value);
+});
+
+const formatDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('es', { day: '2-digit', month: 'short' });
 </script>
 
 <template>
@@ -23,161 +84,251 @@ const topServices = [
       <span class="subtitle">El Motor de Ventas</span>
     </div>
 
-    <!-- KPIs Grid -->
-    <div class="metrics-grid">
-      <DashboardCard v-for="kpi in kpis" :key="kpi.label">
-        <div class="kpi-item">
-          <span class="kpi-label">{{ kpi.label }}</span>
-          <div class="kpi-value-row">
-            <span class="kpi-value">{{ kpi.value }}</span>
-            <span class="kpi-trend" :style="{ color: kpi.color }">{{ kpi.trend }}</span>
+    <div v-if="loading" class="loading-state">Cargando datos...</div>
+
+    <template v-else>
+      <!-- KPIs (calculados automáticamente) -->
+      <div class="metrics-grid">
+        <DashboardCard v-for="kpi in kpis" :key="kpi.label">
+          <div class="kpi-item">
+            <span class="kpi-label">{{ kpi.label }}</span>
+            <div class="kpi-value-row">
+              <span class="kpi-value">{{ kpi.value }}</span>
+              <span class="kpi-trend" :style="{ color: kpi.color }">{{ kpi.trend }}</span>
+            </div>
+          </div>
+        </DashboardCard>
+      </div>
+
+      <!-- Pipeline + Top Servicios -->
+      <div class="content-grid">
+        <DashboardCard title="Embudo de Ventas (Pipeline)">
+          <div v-if="leads.length === 0" class="empty-chart">
+            Añade leads para ver el pipeline
+          </div>
+          <div v-else class="funnel-container">
+            <div v-for="step in pipeline" :key="step.label" class="funnel-step"
+              :class="{ highlight: step.highlight }"
+              :style="{ width: step.width }">
+              {{ step.label }} ({{ step.count }})
+            </div>
+          </div>
+        </DashboardCard>
+
+        <DashboardCard title="Top Servicios (Cerrados-Ganados)">
+          <div v-if="topServices.length === 0" class="empty-chart">
+            Los servicios aparecen cuando cierres leads
+          </div>
+          <ul v-else class="services-list">
+            <li v-for="svc in topServices" :key="svc.name" class="service-item">
+              <div class="service-info">
+                <span class="service-name">{{ svc.name }}</span>
+                <span class="service-sales">{{ svc.sales }} ventas</span>
+              </div>
+              <div class="progress-bar">
+                <div class="fill" :style="{ width: svc.value }"></div>
+              </div>
+            </li>
+          </ul>
+        </DashboardCard>
+      </div>
+
+      <!-- Tabla de Leads -->
+      <DashboardCard title="Leads">
+        <template #actions>
+          <div class="table-controls">
+            <select v-model="filtroEstado" class="filter-select">
+              <option value="">Todos los estados</option>
+              <option v-for="s in PIPELINE_STAGES" :key="s" :value="s">{{ s }}</option>
+              <option value="Cerrado-Perdido">Cerrado-Perdido</option>
+            </select>
+            <button class="btn-primary-sm" @click="openNew">+ Nuevo Lead</button>
+          </div>
+        </template>
+
+        <div v-if="filteredLeads.length === 0" class="empty-state">
+          No hay leads todavía. Añade el primero.
+        </div>
+        <div v-else class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Nombre / Empresa</th>
+                <th>Servicio</th>
+                <th>Valor</th>
+                <th>Fuente</th>
+                <th>Estado</th>
+                <th>Fecha</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="lead in filteredLeads" :key="lead.id">
+                <td>
+                  <div class="cell-stack">
+                    <strong>{{ lead.nombre }}</strong>
+                    <span class="muted">{{ lead.empresa }}</span>
+                  </div>
+                </td>
+                <td>{{ lead.servicio || '—' }}</td>
+                <td>{{ lead.valor_estimado > 0 ? `${lead.valor_estimado.toLocaleString('es-ES')} €` : '—' }}</td>
+                <td>{{ lead.fuente }}</td>
+                <td>
+                  <select
+                    class="estado-select"
+                    :value="lead.estado"
+                    :style="{ color: ESTADO_COLORS[lead.estado] }"
+                    @change="changeEstado(lead, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option v-for="s in [...PIPELINE_STAGES, 'Cerrado-Perdido']" :key="s" :value="s">{{ s }}</option>
+                  </select>
+                </td>
+                <td class="muted">{{ formatDate(lead.fecha_creacion) }}</td>
+                <td>
+                  <div class="row-actions">
+                    <button class="btn-icon-text" @click="openEdit(lead)">✏️</button>
+                    <button class="btn-icon-text danger" @click="confirmDelete(lead)">🗑️</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </DashboardCard>
+    </template>
+
+    <!-- Modal: Nuevo / Editar Lead -->
+    <div class="modal-overlay" v-if="showModal" @click.self="showModal = false">
+      <div class="modal-box">
+        <p class="modal-title">{{ editingId ? 'Editar Lead' : 'Nuevo Lead' }}</p>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Nombre *</label>
+            <input v-model="form.nombre" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label>Empresa</label>
+            <input v-model="form.empresa" class="form-input" />
           </div>
         </div>
-      </DashboardCard>
-    </div>
-
-    <!-- Main Content -->
-    <div class="content-grid">
-      <!-- Funnel Chart Mockup -->
-      <DashboardCard title="Embudo de Ventas (Pipeline)">
-        <div class="funnel-container">
-          <div class="funnel-step" style="width: 100%; opacity: 0.2">Leads (45)</div>
-          <div class="funnel-step" style="width: 80%; opacity: 0.4">Cualificados (30)</div>
-          <div class="funnel-step" style="width: 60%; opacity: 0.6">Propuestas (25)</div>
-          <div class="funnel-step" style="width: 40%; opacity: 0.8">Negociación (10)</div>
-          <div class="funnel-step highlight" style="width: 30%;">Cerrados (8)</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Email</label>
+            <input v-model="form.email" type="email" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label>Teléfono</label>
+            <input v-model="form.telefono" class="form-input" />
+          </div>
         </div>
-      </DashboardCard>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Fuente</label>
+            <select v-model="form.fuente" class="form-input">
+              <option>Orgánico</option>
+              <option>Google Ads</option>
+              <option>Instagram</option>
+              <option>Referido</option>
+              <option>Web</option>
+              <option>Otro</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Servicio de interés</label>
+            <input v-model="form.servicio" class="form-input" placeholder="Pack Starter, SEO..." />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Valor estimado ($)</label>
+            <input v-model.number="form.valor_estimado" type="number" min="0" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label>CAC ($)</label>
+            <input v-model.number="form.cac" type="number" min="0" class="form-input" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Estado</label>
+          <select v-model="form.estado" class="form-input">
+            <option v-for="s in [...PIPELINE_STAGES, 'Cerrado-Perdido']" :key="s" :value="s">{{ s }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Notas</label>
+          <textarea v-model="form.notas" class="form-input" rows="3"></textarea>
+        </div>
 
-      <!-- Top Services -->
-      <DashboardCard title="Top Servicios Vendidos">
-        <ul class="services-list">
-          <li v-for="service in topServices" :key="service.name" class="service-item">
-            <div class="service-info">
-              <span class="service-name">{{ service.name }}</span>
-              <span class="service-sales">{{ service.sales }} ventas</span>
-            </div>
-            <div class="progress-bar">
-              <div class="fill" :style="{ width: service.value }"></div>
-            </div>
-          </li>
-        </ul>
-      </DashboardCard>
+        <div class="modal-actions">
+          <button class="btn-text" @click="showModal = false">Cancelar</button>
+          <button class="btn-primary" @click="saveLead" :disabled="saving || !form.nombre">
+            {{ saving ? 'Guardando...' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
     </div>
-    
   </div>
 </template>
 
 <style scoped>
-.view-container {
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-}
+.view-container { display: flex; flex-direction: column; gap: 2rem; }
+.header h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+.subtitle { color: var(--color-text-muted); font-size: 1.1rem; }
+.loading-state { color: var(--color-text-muted); font-style: italic; padding: 2rem 0; }
 
-.header h1 {
-  font-size: 2rem;
-  margin-bottom: 0.5rem;
-}
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; }
+.kpi-item { display: flex; flex-direction: column; }
+.kpi-label { font-size: 0.9rem; color: var(--color-text-muted); margin-bottom: 0.5rem; }
+.kpi-value { font-size: 2rem; font-weight: 700; margin-right: 1rem; }
+.kpi-trend { font-size: 0.8rem; font-weight: 600; }
+.kpi-value-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; }
 
-.subtitle {
-  color: var(--color-text-muted);
-  font-size: 1.1rem;
-}
+.content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+@media (max-width: 900px) { .content-grid { grid-template-columns: 1fr; } }
 
-.metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.5rem;
-}
+.funnel-container { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 1rem 0; }
+.funnel-step { background-color: var(--color-primary); color: #000; text-align: center; padding: 0.8rem; font-weight: 700; border-radius: 4px; white-space: nowrap; min-width: 160px; }
+.funnel-step.highlight { background-color: #4ade80; }
 
-.kpi-item {
-  display: flex;
-  flex-direction: column;
-}
+.services-list { list-style: none; padding: 0; }
+.service-item { margin-bottom: 1.5rem; }
+.service-info { display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-weight: 500; }
+.progress-bar { width: 100%; height: 6px; background-color: var(--color-bg-lighter); border-radius: 3px; overflow: hidden; }
+.fill { height: 100%; background-color: var(--color-primary); }
 
-.kpi-label {
-    font-size: 0.9rem;
-    color: var(--color-text-muted);
-    margin-bottom: 0.5rem;
-}
+.table-controls { display: flex; gap: 0.75rem; align-items: center; }
+.filter-select { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.85rem; outline: none; color-scheme: dark; }
+.btn-primary-sm { background: var(--color-primary); color: #000; font-weight: 700; font-size: 0.85rem; padding: 0.35rem 0.9rem; border: none; border-radius: 4px; cursor: pointer; }
 
-.kpi-value {
-    font-size: 2rem;
-    font-weight: 700;
-    margin-right: 1rem;
-}
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th, .data-table td { padding: 0.85rem 0.75rem; text-align: left; border-bottom: 1px solid var(--color-border); }
+.data-table th { color: var(--color-text-muted); font-size: 0.85rem; font-weight: 600; text-transform: uppercase; }
+.cell-stack { display: flex; flex-direction: column; }
+.muted { font-size: 0.8rem; color: var(--color-text-muted); }
 
-.kpi-trend {
-    font-size: 0.9rem;
-    font-weight: 600;
-}
+.estado-select { background: transparent; border: 1px solid var(--color-border); border-radius: 12px; padding: 0.25rem 0.5rem; font-size: 0.8rem; font-weight: 700; cursor: pointer; outline: none; color-scheme: dark; }
+.estado-select:focus { border-color: var(--color-primary); }
+.row-actions { display: flex; gap: 0.5rem; }
+.btn-icon-text { background: transparent; border: none; cursor: pointer; font-size: 0.9rem; padding: 0.25rem; border-radius: 4px; }
+.btn-icon-text:hover { background: rgba(255,255,255,0.1); }
+.btn-icon-text.danger:hover { background: rgba(255,68,68,0.15); }
 
-.content-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-}
+.empty-state { color: var(--color-text-muted); text-align: center; padding: 2rem; font-style: italic; }
+.empty-chart { color: var(--color-text-muted); text-align: center; padding: 3rem 1rem; font-style: italic; }
 
-@media (max-width: 900px) {
-    .content-grid {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* Funnel Styles */
-.funnel-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 1rem 0;
-}
-
-.funnel-step {
-    background-color: var(--color-primary);
-    color: var(--color-bg-dark);
-    text-align: center;
-    padding: 0.8rem;
-    font-weight: 700;
-    border-radius: 4px;
-    white-space: nowrap; /* Prevent wrapping */
-    min-width: fit-content; /* Ensure bar is at least as wide as text */
-    overflow: visible; /* Allow text to be seen if it somehow still overflows (though fit-content should fix) */
-}
-
-.funnel-step.highlight {
-    background-color: #fff;
-    color: #000;
-}
-
-/* Service List Styles */
-.services-list {
-    list-style: none;
-    padding: 0;
-}
-
-.service-item {
-    margin-bottom: 1.5rem;
-}
-
-.service-info {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
-}
-
-.progress-bar {
-    width: 100%;
-    height: 6px;
-    background-color: var(--color-bg-lighter);
-    border-radius: 3px;
-    overflow: hidden;
-}
-
-.fill {
-    height: 100%;
-    background-color: var(--color-primary);
-}
+/* Modals */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+.modal-box { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 12px; padding: 2rem; width: 90%; max-width: 560px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; }
+.modal-title { font-size: 1.2rem; font-weight: 700; margin: 0 0 1.5rem; color: var(--color-text-light); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--color-border); }
+.form-row { display: flex; gap: 0.75rem; }
+.form-row .form-group { flex: 1; }
+.form-group { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
+.form-group label { font-size: 0.85rem; font-weight: 600; color: var(--color-text-muted); }
+.form-input { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.7rem 1rem; border-radius: 6px; font-family: inherit; font-size: 0.95rem; outline: none; width: 100%; box-sizing: border-box; resize: vertical; color-scheme: dark; }
+.form-input:focus { border-color: var(--color-primary); }
+.btn-text { background: transparent; border: none; color: var(--color-primary); cursor: pointer; font-size: 0.9rem; }
+.btn-primary { background-color: var(--color-primary); color: #000; font-weight: 700; padding: 0.6rem 1.4rem; border-radius: 6px; border: none; cursor: pointer; }
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 </style>
