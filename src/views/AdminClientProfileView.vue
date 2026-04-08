@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import DashboardCard from '../components/DashboardCard.vue';
+import ClientReportModule from '../components/ClientReportModule.vue';
 import { useClientProfile, type Sede } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
 
@@ -293,6 +294,14 @@ const formatDate = (iso: string) =>
           </DashboardCard>
         </div>
       </div>
+
+      <!-- Módulo de Informes (ancho completo) -->
+      <ClientReportModule
+        :client-id="clientId"
+        :client-data="clientData ? { name: clientData.name, contact: clientData.contact, industry: clientData.industry } : null"
+        :proyectos="proyectos"
+        :is-admin="true"
+      />
     </template>
 
     <div v-else class="loading-state">Cliente no encontrado.</div>

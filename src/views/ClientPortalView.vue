@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import DashboardCard from '../components/DashboardCard.vue';
+import ClientReportModule from '../components/ClientReportModule.vue';
 import { authStore } from '../store/auth';
 import { useClientProfile } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
@@ -161,6 +162,14 @@ const formatDate = (iso: string) =>
           </ul>
         </DashboardCard>
       </div>
+
+      <!-- Módulo de Informes de Trabajo -->
+      <ClientReportModule
+        :client-id="clientId"
+        :client-data="clientData ? { name: clientData.name, contact: clientData.contact, industry: clientData.industry } : null"
+        :proyectos="proyectos"
+        :is-admin="false"
+      />
 
       <!-- Google My Business -->
       <div v-if="filteredSedes.length > 0">
