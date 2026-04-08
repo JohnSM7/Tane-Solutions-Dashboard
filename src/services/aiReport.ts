@@ -120,7 +120,8 @@ export async function generateInformeConIA(
     contents: [{ role: 'user', parts }],
     config: {
       temperature: 0.7,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 8192,
+      responseMimeType: 'application/json',
     },
   });
 
@@ -152,9 +153,33 @@ export async function generateInformeConIA(
     }
     try {
       parsed = JSON.parse(jsonMatch[0]);
-    } catch (parseErr) {
-      console.error('[AI Report] JSON parse failed:', parseErr, '\nExtracted:', jsonMatch[0].substring(0, 500));
-      throw new Error('Error al procesar la respuesta de la IA. Revisa la consola para más detalles.');
+    } catch {
+      // 4. Intentar reparar JSON truncado cerrando brackets abiertos
+      console.warn('[AI Report] Attempting JSON repair...');
+      let repaired = jsonMatch[0];
+      // Cerrar strings abiertas
+      const doubleQuotes = (repaired.match(/"/g) || []).length;
+      if (doubleQuotes % 2 !== 0) repaired += '"';
+      // Cerrar arrays y objetos abiertos
+      const opens = (repaired.match(/[\[{]/g) || []).length;
+      const closes = (repaired.match(/[\]}]/g) || []).length;
+      for (let i = 0; i < opens - closes; i++) {
+        // Determinar qué cerrar revisando el último bracket abierto sin cerrar
+        const lastOpen = Math.max(repaired.lastIndexOf('['), repaired.lastIndexOf('{'));
+        const lastClose = Math.max(repaired.lastIndexOf(']'), repaired.lastIndexOf('}'));
+        if (lastOpen > lastClose) {
+          repaired += repaired[lastOpen] === '[' ? ']' : '}';
+        } else {
+          repaired += '}';
+        }
+      }
+      try {
+        parsed = JSON.parse(repaired);
+        console.log('[AI Report] JSON repair succeeded');
+      } catch (finalErr) {
+        console.error('[AI Report] JSON repair also failed:', finalErr);
+        throw new Error('La IA devolvió un JSON incompleto. Intenta con un prompt más corto o menos imágenes.');
+      }
     }
   }
 
