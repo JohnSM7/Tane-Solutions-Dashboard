@@ -32,7 +32,7 @@ const handleLogin = async () => {
   try {
     await login(email.value, password.value);
     failedAttempts.value = 0;
-    router.push(authStore.role === 'CLIENT' ? '/client-panel' : '/commercial');
+    router.push(authStore.role === 'CLIENT' ? '/client-panel' : '/dashboard');
   } catch (e: any) {
     failedAttempts.value++;
     if (failedAttempts.value >= MAX_ATTEMPTS) {
@@ -124,7 +124,7 @@ const toggleMode = () => {
   justify-content: center;
   width: 100vw;
   height: 100vh;
-  background: var(--color-bg-dark);
+  background: transparent;
 }
 
 .login-card {

@@ -19,7 +19,7 @@ export const authStore = reactive<AuthState>({
 
 async function loadProfile(userId: string, email: string): Promise<void> {
   const { data } = await supabase
-    .from('perfiles')
+    .from('usuarios')
     .select('nombre, rol, cliente_id')
     .eq('id', userId)
     .single();

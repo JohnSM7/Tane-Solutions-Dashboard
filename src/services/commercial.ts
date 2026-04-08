@@ -150,3 +150,15 @@ export async function deleteLead(id: string): Promise<void> {
   const { error } = await supabase.from('leads').delete().eq('id', id);
   if (error) throw error;
 }
+
+export function useLeadsList() {
+  const leads = ref<Pick<Lead, 'id' | 'nombre' | 'empresa'>[]>([]);
+  Promise.resolve(
+    supabase
+      .from('leads')
+      .select('id, nombre, empresa')
+      .not('estado', 'in', '("Cerrado-Perdido")')
+      .order('fecha_creacion', { ascending: false })
+  ).then(({ data }) => { leads.value = (data ?? []) as any[]; }).catch(console.error);
+  return { leads };
+}

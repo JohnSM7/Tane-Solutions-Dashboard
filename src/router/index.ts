@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
+import HomeView from '../views/HomeView.vue';
 import CommercialView from '../views/CommercialView.vue';
 import FinancialView from '../views/FinancialView.vue';
 import OperationsView from '../views/OperationsView.vue';
@@ -9,6 +10,7 @@ import ClientPortalView from '../views/ClientPortalView.vue';
 import LoginView from '../views/LoginView.vue';
 import UpdatePasswordView from '../views/UpdatePasswordView.vue';
 import AlertasView from '../views/AlertasView.vue';
+import AdminUsuariosView from '../views/AdminUsuariosView.vue';
 import { authStore } from '../store/auth';
 
 const router = createRouter({
@@ -30,10 +32,16 @@ const router = createRouter({
             path: '/',
             redirect: () => {
                 if (!authStore.isAuthenticated) return '/login';
-                return authStore.role === 'CLIENT' ? '/client-panel' : '/commercial';
+                return authStore.role === 'CLIENT' ? '/client-panel' : '/dashboard';
             }
         },
         // --- ADMIN ROUTES ---
+        {
+            path: '/dashboard',
+            name: 'dashboard',
+            component: HomeView,
+            meta: { requiresAuth: true, roles: ['ADMIN'] }
+        },
         {
             path: '/alerts',
             name: 'alerts',
@@ -76,6 +84,12 @@ const router = createRouter({
             component: AdminClientProfileView,
             meta: { requiresAuth: true, roles: ['ADMIN'] }
         },
+        {
+            path: '/usuarios',
+            name: 'usuarios',
+            component: AdminUsuariosView,
+            meta: { requiresAuth: true, roles: ['ADMIN'] }
+        },
         // --- CLIENT ROUTES ---
         {
             path: '/client-panel',
@@ -97,7 +111,7 @@ router.beforeEach((to, _from, next) => {
         if (window.location.hash.includes('type=recovery')) {
             return next();
         }
-        return next(userRole === 'CLIENT' ? '/client-panel' : '/commercial');
+        return next(userRole === 'CLIENT' ? '/client-panel' : '/dashboard');
     }
 
     // Check if route requires authentication
@@ -109,7 +123,7 @@ router.beforeEach((to, _from, next) => {
     if (to.meta.roles && Array.isArray(to.meta.roles)) {
         if (!to.meta.roles.includes(userRole)) {
             // Unauthorized access, redirect back to home logic
-            return next(userRole === 'CLIENT' ? '/client-panel' : '/commercial');
+            return next(userRole === 'CLIENT' ? '/client-panel' : '/dashboard');
         }
     }
 

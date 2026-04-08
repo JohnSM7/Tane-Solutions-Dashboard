@@ -38,21 +38,21 @@ export type ProyectoRentabilidad = {
 // ── Datos fiscales de la agencia ──────────────────────────────────────────────
 // Actualiza estos valores con los datos reales de Tane Solutions
 export const AGENCIA = {
-  nombre:    'Tane Solutions S.L.',
-  cif:       'B-XXXXXXXX',
+  nombre: 'Tane Solutions S.L.',
+  cif: 'B-XXXXXXXX',
   direccion: 'Calle Ejemplo, 1 · 28001 Madrid',
-  email:     'admin@tanesolutions.com',
-  web:       'www.tanesolutions.com',
-  iban:      'ES00 0000 0000 00 0000000000',
+  email: 'info@tanesolutions.com',
+  web: 'www.tanesolutions.com',
+  iban: 'ES00 0000 0000 00 0000000000',
 };
 
 export const TIPOS_IVA = [0, 4, 10, 21] as const;
 
 export const PLANES_PAGO: Record<string, { label: string; pagos: number[] }> = {
-  '100':       { label: 'Pago único (100%)',             pagos: [100] },
-  '50/50':     { label: '2 pagos iguales (50% + 50%)',   pagos: [50, 50] },
-  '40/60':     { label: '2 pagos (40% inicio + 60% fin)',pagos: [40, 60] },
-  '33/33/34':  { label: '3 pagos iguales',               pagos: [33, 33, 34] },
+  '100': { label: 'Pago único (100%)', pagos: [100] },
+  '50/50': { label: '2 pagos iguales (50% + 50%)', pagos: [50, 50] },
+  '40/60': { label: '2 pagos (40% inicio + 60% fin)', pagos: [40, 60] },
+  '33/33/34': { label: '3 pagos iguales', pagos: [33, 33, 34] },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ async function loadLogoBase64(): Promise<string | null> {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror  = () => resolve(null);
+      reader.onerror = () => resolve(null);
       reader.readAsDataURL(blob);
     });
   } catch {
@@ -155,10 +155,10 @@ export async function generateInvoicePDF(
   const ML = 15;   // margin left
   const MR = 195;  // margin right
 
-  const tipoIva  = factura.tipo_iva ?? 21;
-  const base     = factura.importe;
+  const tipoIva = factura.tipo_iva ?? 21;
+  const base = factura.importe;
   const cuotaIva = Math.round(base * tipoIva) / 100;
-  const total    = base + cuotaIva;
+  const total = base + cuotaIva;
 
   // ── Cabecera verde lima ───────────────────────────────────────────────────
   doc.setFillColor(227, 255, 4);
@@ -195,7 +195,7 @@ export async function generateInvoicePDF(
   doc.roundedRect(128, BLK_Y, 67, 46, 2, 2, 'FD');
 
   const col2 = 133;
-  const addRow = (label: string, value: string, y: number, valueColor?: [number,number,number]) => {
+  const addRow = (label: string, value: string, y: number, valueColor?: [number, number, number]) => {
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(100, 100, 100);
@@ -206,8 +206,8 @@ export async function generateInvoicePDF(
     doc.text(value, col2, y + 5);
   };
 
-  addRow('Nº FACTURA',    factura.numero_factura ?? '—',          BLK_Y + 7);
-  addRow('FECHA EMISIÓN', formatDateEs(factura.fecha_emision),     BLK_Y + 19);
+  addRow('Nº FACTURA', factura.numero_factura ?? '—', BLK_Y + 7);
+  addRow('FECHA EMISIÓN', formatDateEs(factura.fecha_emision), BLK_Y + 19);
   if (factura.fecha_vencimiento) {
     addRow('VENCIMIENTO', formatDateEs(factura.fecha_vencimiento), BLK_Y + 31, [200, 50, 50]);
   }
@@ -256,10 +256,10 @@ export async function generateInvoicePDF(
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
-  doc.text('CONCEPTO',        ML + 4,       TBL_Y + 6);
-  doc.text('BASE IMPONIBLE',  MR - 80,      TBL_Y + 6, { align: 'right' });
-  doc.text(`IVA (${tipoIva}%)`, MR - 48,   TBL_Y + 6, { align: 'right' });
-  doc.text('TOTAL',           MR - 4,       TBL_Y + 6, { align: 'right' });
+  doc.text('CONCEPTO', ML + 4, TBL_Y + 6);
+  doc.text('BASE IMPONIBLE', MR - 80, TBL_Y + 6, { align: 'right' });
+  doc.text(`IVA (${tipoIva}%)`, MR - 48, TBL_Y + 6, { align: 'right' });
+  doc.text('TOTAL', MR - 4, TBL_Y + 6, { align: 'right' });
 
   // Fila concepto
   const conceptoLines = doc.splitTextToSize(factura.concepto, 100);
@@ -272,9 +272,9 @@ export async function generateInvoicePDF(
   doc.setFont('helvetica', 'normal');
   doc.text(conceptoLines, ML + 4, TBL_Y + 9 + rowH / 2 - (conceptoLines.length - 1) * 2.5);
   doc.setFont('helvetica', 'bold');
-  doc.text(formatEur(base),     MR - 80, TBL_Y + 9 + rowH / 2 + 1, { align: 'right' });
+  doc.text(formatEur(base), MR - 80, TBL_Y + 9 + rowH / 2 + 1, { align: 'right' });
   doc.text(formatEur(cuotaIva), MR - 48, TBL_Y + 9 + rowH / 2 + 1, { align: 'right' });
-  doc.text(formatEur(total),    MR - 4,  TBL_Y + 9 + rowH / 2 + 1, { align: 'right' });
+  doc.text(formatEur(total), MR - 4, TBL_Y + 9 + rowH / 2 + 1, { align: 'right' });
 
   // Si IVA es 0%, nota de exención
   if (tipoIva === 0) {
@@ -298,7 +298,7 @@ export async function generateInvoicePDF(
     doc.text(value, totX2, y, { align: 'right' });
   };
 
-  addTotRow('Base imponible:',      formatEur(base),     TOT_Y);
+  addTotRow('Base imponible:', formatEur(base), TOT_Y);
   if (tipoIva > 0) {
     addTotRow(`IVA (${tipoIva}%):`, formatEur(cuotaIva), TOT_Y + 6);
   }
@@ -479,8 +479,8 @@ export function useFinancialData() {
     facturas.value = (facturasRes.data ?? []) as Factura[];
     proyectos.value = (proyectosRes.data ?? []) as ProyectoRentabilidad[];
   })
-  .catch(console.error)
-  .finally(() => { loading.value = false; });
+    .catch(console.error)
+    .finally(() => { loading.value = false; });
 
   return { facturas, proyectos, proyectosConFacturas, kpis, monthlyBilling, loading };
 }

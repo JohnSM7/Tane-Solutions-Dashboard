@@ -221,6 +221,46 @@ const cashFlow = computed(() => {
 });
 
 const cashFlowMax = computed(() => Math.max(...cashFlow.value.map(m => m.total), 1));
+
+// ── Rentabilidad por cliente ──────────────────────────────────────────────────
+const rentabilidadClientes = computed(() => {
+  const map = new Map<string, {
+    nombre: string;
+    facturado: number;
+    cobrado: number;
+    coste: number;
+  }>();
+
+  for (const f of facturas.value) {
+    if (!f.cliente_id) continue;
+    const nombre = f.clientes?.nombre ?? f.cliente_id;
+    if (!map.has(f.cliente_id)) map.set(f.cliente_id, { nombre, facturado: 0, cobrado: 0, coste: 0 });
+    const entry = map.get(f.cliente_id)!;
+    entry.facturado += f.importe;
+    if (f.estado === 'Pagada') entry.cobrado += f.importe;
+  }
+
+  for (const p of proyectos.value) {
+    if (!p.cliente_id) continue;
+    if (!map.has(p.cliente_id)) {
+      const nombre = p.clientes?.nombre ?? p.cliente_id;
+      map.set(p.cliente_id, { nombre, facturado: 0, cobrado: 0, coste: 0 });
+    }
+    map.get(p.cliente_id)!.coste += p.coste ?? 0;
+  }
+
+  return [...map.entries()]
+    .map(([id, d]) => ({
+      id,
+      nombre: d.nombre,
+      facturado: d.facturado,
+      cobrado: d.cobrado,
+      pendiente: d.facturado - d.cobrado,
+      coste: d.coste,
+      margen: d.facturado > 0 ? Math.round((d.facturado - d.coste) / d.facturado * 100) : 0,
+    }))
+    .sort((a, b) => b.facturado - a.facturado);
+});
 </script>
 
 <template>
@@ -414,6 +454,37 @@ const cashFlowMax = computed(() => Math.max(...cashFlow.value.map(m => m.total),
               </div>
             </div>
 
+          </div>
+        </div>
+      </DashboardCard>
+
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <!-- RENTABILIDAD POR CLIENTE                                            -->
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <DashboardCard title="Rentabilidad por Cliente">
+        <div v-if="rentabilidadClientes.length === 0" class="empty-state">
+          Sin datos de clientes para mostrar.
+        </div>
+        <div v-else class="rent-table">
+          <div class="rent-header">
+            <span>Cliente</span>
+            <span class="ta-r">Facturado</span>
+            <span class="ta-r">Cobrado</span>
+            <span class="ta-r">Pendiente</span>
+            <span class="ta-r">Coste est.</span>
+            <span class="ta-r">Margen</span>
+          </div>
+          <div v-for="row in rentabilidadClientes" :key="row.id" class="rent-row">
+            <span class="rent-nombre">{{ row.nombre }}</span>
+            <span class="ta-r">{{ formatEur(row.facturado) }}</span>
+            <span class="ta-r" style="color:#4ade80">{{ formatEur(row.cobrado) }}</span>
+            <span class="ta-r" :style="{ color: row.pendiente > 0 ? '#ffa500' : 'inherit' }">{{ formatEur(row.pendiente) }}</span>
+            <span class="ta-r muted">{{ formatEur(row.coste) }}</span>
+            <span class="ta-r">
+              <span class="margen-pill" :class="{ high: row.margen >= 50, mid: row.margen >= 30 && row.margen < 50, low: row.margen < 30 }">
+                {{ row.margen }}%
+              </span>
+            </span>
           </div>
         </div>
       </DashboardCard>
@@ -739,4 +810,52 @@ const cashFlowMax = computed(() => Math.max(...cashFlow.value.map(m => m.total),
 .cf-dot.cobrado   { background: #4ade80; }
 .cf-dot.pendiente { background: #ffa500; }
 .cf-dot.vencido   { background: #ff4444; }
+
+/* Rentabilidad por cliente */
+.rent-table { display: flex; flex-direction: column; gap: 0; }
+.rent-header {
+  display: grid;
+  grid-template-columns: 1fr repeat(5, 110px);
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+.rent-row {
+  display: grid;
+  grid-template-columns: 1fr repeat(5, 110px);
+  gap: 0.5rem;
+  padding: 0.65rem 0.5rem;
+  font-size: 0.88rem;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  align-items: center;
+}
+.rent-row:last-child { border-bottom: none; }
+.rent-row:hover { background: rgba(255,255,255,0.03); }
+.rent-nombre { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ta-r { text-align: right; }
+.margen-pill {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.margen-pill.high { background: rgba(74,222,128,0.15); color: #4ade80; }
+.margen-pill.mid  { background: rgba(255,165,0,0.15);  color: #ffa500; }
+.margen-pill.low  { background: rgba(255,68,68,0.15);  color: #f87171; }
+
+@media (max-width: 768px) {
+  .rent-header, .rent-row { grid-template-columns: 1fr 80px 70px; }
+  .rent-header span:nth-child(3),
+  .rent-header span:nth-child(4),
+  .rent-header span:nth-child(5),
+  .rent-row span:nth-child(3),
+  .rent-row span:nth-child(4),
+  .rent-row span:nth-child(5) { display: none; }
+}
 </style>

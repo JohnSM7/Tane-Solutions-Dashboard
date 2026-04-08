@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import DashboardCard from '../components/DashboardCard.vue';
+import ClientReportGenerator from '../components/ClientReportGenerator.vue';
 import { useClientProfile, type Sede } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
 
@@ -118,6 +119,9 @@ const confirmDeleteDoc = async (doc: any) => {
   await deleteDocumento(doc);
 };
 
+// ── Generador de Informes ─────────────────────────────────────────────────────
+const showReportGenerator = ref(false);
+
 // ── Utils ─────────────────────────────────────────────────────────────────────
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('es', { day: '2-digit', month: 'short', year: '2-digit' });
@@ -229,6 +233,50 @@ const formatDate = (iso: string) =>
                 </div>
               </li>
             </ul>
+          </DashboardCard>
+
+          <!-- ─────────────────────────────────────────────────── -->
+          <!-- GENERADOR DE INFORMES                               -->
+          <!-- ─────────────────────────────────────────────────── -->
+          <DashboardCard title="Generador de Informes de Trabajo">
+            <template #actions>
+              <button
+                class="btn-action"
+                @click="showReportGenerator = !showReportGenerator"
+                :class="{ active: showReportGenerator }"
+              >
+                {{ showReportGenerator ? '✕ Cerrar' : '📋 Crear Informe' }}
+              </button>
+            </template>
+
+            <Transition name="fade">
+              <ClientReportGenerator
+                v-if="showReportGenerator"
+                :clienteId="clientId"
+                :clienteNombre="clientData!.name"
+                :clienteLogo="clientData!.logo || undefined"
+                :clienteCif="clientData!.cif || undefined"
+                :proyectoNombre="filteredProyectos[0]?.nombre"
+              />
+            </Transition>
+
+            <div v-if="!showReportGenerator" class="report-cta">
+              <div class="report-cta-icon">✨</div>
+              <p class="report-cta-text">
+                Describe el trabajo realizado para <strong>{{ clientData!.name }}</strong>, adjunta capturas
+                de pantalla o imágenes de referencia y <strong>Gemini generará el informe completo
+                automáticamente</strong> con la estética corporativa de Tane Solutions.
+              </p>
+              <div class="report-cta-tags">
+                <span class="report-tag">✨ Redacción automática con IA</span>
+                <span class="report-tag">🖼️ Análisis de imágenes</span>
+                <span class="report-tag">📄 PDF con diseño Tane</span>
+                <span class="report-tag">🗄️ Archivos del NAS</span>
+              </div>
+              <button class="btn-primary report-start-btn" @click="showReportGenerator = true">
+                ✨ Generar Informe con IA →
+              </button>
+            </div>
           </DashboardCard>
         </div>
 
@@ -357,6 +405,25 @@ const formatDate = (iso: string) =>
 
 <style scoped>
 .view-container { display: flex; flex-direction: column; gap: 2rem; }
+
+/* Report CTA (collapsed state) */
+.report-cta { display: flex; flex-direction: column; gap: 1rem; align-items: flex-start; }
+.report-cta-icon { font-size: 2rem; }
+.report-cta-text { margin: 0; font-size: 0.9rem; color: var(--color-text-muted); line-height: 1.6; }
+.report-cta-text strong { color: var(--color-text-light); }
+.report-cta-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.report-tag { font-size: 0.76rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 8px; background: rgba(227,255,4,0.08); color: var(--color-primary); border: 1px solid rgba(227,255,4,0.2); }
+.report-nas-config { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 0.4rem; }
+.nas-label { font-size: 0.85rem; font-weight: 600; color: var(--color-text-muted); }
+.nas-hint { font-weight: 400; font-size: 0.75rem; }
+.report-start-btn { margin-top: 0.25rem; }
+
+/* btn-action active state */
+.btn-action.active { border-color: var(--color-primary); color: var(--color-primary); }
+
+/* Transition */
+.fade-enter-active, .fade-leave-active { transition: opacity 0.25s, transform 0.25s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; transform: translateY(-6px); }
 .loading-state { color: var(--color-text-muted); font-style: italic; padding: 2rem 0; }
 
 .profile-header { display: flex; justify-content: space-between; align-items: center; background: var(--color-bg-card); padding: 2rem; border-radius: 12px; border: 1px solid var(--color-border); flex-wrap: wrap; gap: 1.5rem; }

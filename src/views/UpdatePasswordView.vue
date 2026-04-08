@@ -114,7 +114,7 @@ const handleUpdatePassword = async () => {
   justify-content: center;
   width: 100vw;
   height: 100vh;
-  background: var(--color-bg-dark);
+  background: transparent;
 }
 
 .login-card {

@@ -35,7 +35,7 @@ const showSidebar = computed(() => {
   flex: 1;
   padding: 2rem;
   overflow-y: auto;
-  background-color: var(--color-bg-dark);
+  background-color: transparent;
 }
 
 @media (max-width: 768px) {

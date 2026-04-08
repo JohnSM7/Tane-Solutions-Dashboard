@@ -26,7 +26,11 @@
 body {
   min-height: 100vh;
   color: var(--color-text-light);
-  background: var(--color-bg-dark);
+  /* Fondo tecnológico con un overlay oscuro para legibilidad (ligero ajuste de visibilidad) */
+  background: linear-gradient(rgba(0,0,0,0.68), rgba(0,0,0,0.78)), url('/bg-corporate.png');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
   font-family: var(--font-primary);
   font-size: 16px;
   line-height: 1.5;
@@ -40,6 +44,7 @@ body {
   display: flex;
   width: 100%;
   min-height: 100vh;
+  background: transparent;
 }
 
 a {
