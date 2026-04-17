@@ -1,52 +1,58 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed, onMounted } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { login, logout, authStore } from '../store/auth';
 import { supabase } from '../supabase';
 
 const router = useRouter();
+const route  = useRoute();
 
-const email = ref('');
+const email    = ref('');
 const password = ref('');
 const errorMsg = ref('');
 const successMsg = ref('');
-const isLoading = ref(false);
+const isLoading  = ref(false);
 const isRecoveryMode = ref(false);
 
-// ── Protección contra fuerza bruta (client-side) ──────────────────────────────
 const failedAttempts = ref(0);
-const lockoutUntil = ref(0);
-const MAX_ATTEMPTS = 5;
-const LOCKOUT_MS = 5 * 60 * 1000; // 5 minutos
+const lockoutUntil   = ref(0);
+const MAX_ATTEMPTS   = 5;
+const LOCKOUT_MS     = 5 * 60 * 1000;
 
-const isLockedOut = computed(() => Date.now() < lockoutUntil.value);
+const isLockedOut        = computed(() => Date.now() < lockoutUntil.value);
 const lockoutSecondsLeft = computed(() =>
-  isLockedOut.value ? Math.ceil((lockoutUntil.value - Date.now()) / 1000) : 0
+  isLockedOut.value ? Math.ceil((lockoutUntil.value - Date.now()) / 1000) : 0,
 );
+
+onMounted(() => {
+  if (route.query.error === 'rol') {
+    errorMsg.value = 'Este portal es exclusivo para clientes. Si eres administrador accede a dashboard.tanesolutions.com';
+  }
+});
 
 const handleLogin = async () => {
   if (isLockedOut.value) return;
-  errorMsg.value = '';
+  errorMsg.value   = '';
   successMsg.value = '';
-  isLoading.value = true;
+  isLoading.value  = true;
   try {
     await login(email.value, password.value);
-    if (authStore.role === 'CLIENT') {
+    if (authStore.role !== 'CLIENT') {
       await logout();
-      errorMsg.value = 'Este área es exclusiva para administradores. Accede en clientes.tanesolutions.com';
+      errorMsg.value = 'Esta área es exclusiva para clientes. Los administradores acceden en dashboard.tanesolutions.com';
       return;
     }
     failedAttempts.value = 0;
-    router.push('/dashboard');
-  } catch (e: any) {
+    router.push('/client-panel');
+  } catch {
     failedAttempts.value++;
     if (failedAttempts.value >= MAX_ATTEMPTS) {
-      lockoutUntil.value = Date.now() + LOCKOUT_MS;
+      lockoutUntil.value   = Date.now() + LOCKOUT_MS;
       failedAttempts.value = 0;
-      errorMsg.value = `Demasiados intentos fallidos. Espera 5 minutos antes de volver a intentarlo.`;
+      errorMsg.value = 'Demasiados intentos fallidos. Espera 5 minutos antes de volver a intentarlo.';
     } else {
       const remaining = MAX_ATTEMPTS - failedAttempts.value;
-      errorMsg.value = `Credenciales no válidas. ${remaining} intento(s) restante(s) antes del bloqueo temporal.`;
+      errorMsg.value = `Credenciales no válidas. ${remaining} intento(s) restante(s) antes del bloqueo.`;
     }
   } finally {
     isLoading.value = false;
@@ -54,12 +60,9 @@ const handleLogin = async () => {
 };
 
 const handleRecovery = async () => {
-  errorMsg.value = '';
+  errorMsg.value   = '';
   successMsg.value = '';
-  if (!email.value) {
-    errorMsg.value = 'Por favor, introduce tu correo electrónico.';
-    return;
-  }
+  if (!email.value) { errorMsg.value = 'Introduce tu correo electrónico.'; return; }
   isLoading.value = true;
   try {
     const { error } = await supabase.auth.resetPasswordForEmail(email.value, {
@@ -76,70 +79,82 @@ const handleRecovery = async () => {
 
 const toggleMode = () => {
   isRecoveryMode.value = !isRecoveryMode.value;
-  errorMsg.value = '';
+  errorMsg.value   = '';
   successMsg.value = '';
 };
 </script>
 
 <template>
-  <div class="login-wrapper">
-    <div class="login-card">
+  <div class="cliente-login-wrapper">
+    <div class="cliente-login-card">
+
       <div class="brand-header">
-         <img src="/logo-verde.png" alt="Tane Solutions" class="login-logo" />
-         <h1>Tane Solutions</h1>
-         <p>{{ isRecoveryMode ? 'Restablecer contraseña' : 'Portal de Acceso' }}</p>
+        <img src="/logo-verde.png" alt="Tane Solutions" class="login-logo"
+             @error="(e) => (e.target as HTMLImageElement).style.display = 'none'" />
+        <h1>Portal del Cliente</h1>
+        <p>{{ isRecoveryMode ? 'Recuperar acceso' : 'Accede a tu área personal' }}</p>
       </div>
 
       <form @submit.prevent="isRecoveryMode ? handleRecovery() : handleLogin()" class="login-form">
+
         <div class="form-group">
           <label>Correo Electrónico</label>
-          <input type="email" v-model="email" placeholder="ejemplo@correo.com" required class="form-input" :disabled="isLoading" />
+          <input type="email" v-model="email" placeholder="tu@correo.com" required
+                 class="form-input" :disabled="isLoading" />
         </div>
 
         <div v-if="!isRecoveryMode" class="form-group">
           <div class="label-row">
             <label>Contraseña</label>
-            <button type="button" class="btn-link" @click="toggleMode">¿La has olvidado?</button>
+            <button type="button" class="btn-link" @click="toggleMode">¿La olvidaste?</button>
           </div>
-          <input type="password" v-model="password" placeholder="••••••••" required class="form-input" :disabled="isLoading" />
+          <input type="password" v-model="password" placeholder="••••••••" required
+                 class="form-input" :disabled="isLoading" />
         </div>
 
         <p v-if="isLockedOut" class="error-msg lockout-msg">
-          Acceso bloqueado temporalmente. Inténtalo de nuevo en {{ lockoutSecondsLeft }}s.
+          Acceso bloqueado. Inténtalo de nuevo en {{ lockoutSecondsLeft }}s.
         </p>
         <p v-else-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
         <p v-if="successMsg" class="success-msg">{{ successMsg }}</p>
 
         <button type="submit" class="btn-primary login-btn" :disabled="isLoading || isLockedOut">
-          {{ isLoading ? 'Enviando...' : (isRecoveryMode ? 'Enviar enlace de recuperación' : 'Iniciar Sesión') }}
+          {{ isLoading ? 'Entrando…' : (isRecoveryMode ? 'Enviar enlace de recuperación' : 'Acceder a mi portal') }}
         </button>
 
         <button v-if="isRecoveryMode" type="button" class="btn-secondary" @click="toggleMode" :disabled="isLoading">
-          Volver al Inicio de Sesión
+          Volver al inicio de sesión
         </button>
+
       </form>
+
+      <p class="footer-note">
+        ¿Eres administrador?
+        <a href="https://dashboard.tanesolutions.com" class="footer-link">Accede aquí</a>
+      </p>
+
     </div>
   </div>
 </template>
 
 <style scoped>
-.login-wrapper {
+.cliente-login-wrapper {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100vw;
   height: 100vh;
-  background: transparent;
+  background: var(--color-bg-dark);
 }
 
-.login-card {
+.cliente-login-card {
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
   background: var(--color-bg-card);
   padding: 2.5rem;
-  border-radius: 12px;
+  border-radius: 14px;
   border: 1px solid var(--color-border);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
   gap: 2rem;
@@ -154,14 +169,14 @@ const toggleMode = () => {
 }
 
 .login-logo {
-  width: 70px;
-  height: 70px;
+  width: 64px;
+  height: 64px;
   object-fit: contain;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
 }
 
 .brand-header h1 {
-  font-size: 1.5rem;
+  font-size: 1.4rem;
   margin: 0;
   color: var(--color-text-light);
 }
@@ -169,7 +184,7 @@ const toggleMode = () => {
 .brand-header p {
   color: var(--color-text-muted);
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 
 .login-form {
@@ -183,6 +198,12 @@ const toggleMode = () => {
   flex-direction: column;
   gap: 0.5rem;
   text-align: left;
+}
+
+.form-group label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
 }
 
 .label-row {
@@ -200,16 +221,7 @@ const toggleMode = () => {
   cursor: pointer;
   padding: 0;
 }
-
-.btn-link:hover {
-  text-decoration: underline;
-}
-
-.form-group label {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
-}
+.btn-link:hover { text-decoration: underline; }
 
 .form-input {
   background: var(--color-bg-lighter);
@@ -224,19 +236,12 @@ const toggleMode = () => {
   width: 100%;
   box-sizing: border-box;
 }
-
-.form-input:focus {
-  border-color: var(--color-primary);
-}
-
-.form-input:disabled {
-  opacity: 0.5;
-}
+.form-input:focus { border-color: var(--color-primary); }
+.form-input:disabled { opacity: 0.5; }
 
 .error-msg {
   color: #f87171;
   font-size: 0.85rem;
-  text-align: left;
   margin: 0;
 }
 .lockout-msg {
@@ -246,33 +251,27 @@ const toggleMode = () => {
   padding: 0.6rem 0.8rem;
   font-weight: 600;
 }
-
 .success-msg {
   color: #4ade80;
   font-size: 0.82rem;
-  text-align: left;
   margin: 0;
   line-height: 1.5;
 }
 
-.login-btn {
+.btn-primary.login-btn {
   background-color: var(--color-primary);
   color: #000;
   font-weight: 700;
-  padding: 0.8rem;
-  border-radius: 6px;
-  margin-top: 0.5rem;
+  padding: 0.85rem;
+  border-radius: 8px;
   font-size: 1rem;
+  margin-top: 0.25rem;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
 }
-
-.login-btn:hover:not(:disabled) {
-  background-color: var(--color-primary-hover);
-}
-
-.login-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
+.btn-primary.login-btn:hover:not(:disabled) { opacity: 0.88; }
+.btn-primary.login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .btn-secondary {
   background: transparent;
@@ -285,36 +284,21 @@ const toggleMode = () => {
   transition: all 0.2s;
   width: 100%;
 }
-
 .btn-secondary:hover:not(:disabled) {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
 
-.setup-hint {
-  font-size: 0.8rem;
+.footer-note {
+  text-align: center;
+  font-size: 0.82rem;
   color: var(--color-text-muted);
   margin: 0;
 }
-
-.btn-setup {
-  background: transparent;
-  border: 1px dashed var(--color-border);
-  color: var(--color-text-muted);
-  padding: 0.6rem;
-  font-size: 0.85rem;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-setup:hover:not(:disabled) {
-  border-color: var(--color-primary);
+.footer-link {
   color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: none;
 }
-
-.btn-setup:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.footer-link:hover { text-decoration: underline; }
 </style>

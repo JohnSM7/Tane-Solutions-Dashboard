@@ -8,18 +8,27 @@ import AdminClientsView from '../views/AdminClientsView.vue';
 import AdminClientProfileView from '../views/AdminClientProfileView.vue';
 import ClientPortalView from '../views/ClientPortalView.vue';
 import LoginView from '../views/LoginView.vue';
+import LoginClienteView from '../views/LoginClienteView.vue';
 import UpdatePasswordView from '../views/UpdatePasswordView.vue';
 import AlertasView from '../views/AlertasView.vue';
 import AdminUsuariosView from '../views/AdminUsuariosView.vue';
 import { authStore } from '../store/auth';
+import { isClientDomain, loginRoute } from '../utils/domain';
 
 const router = createRouter({
     history: createWebHistory(import.meta.env.BASE_URL),
     routes: [
+        // ── Auth ──────────────────────────────────────────────────────────────
         {
             path: '/login',
             name: 'login',
             component: LoginView,
+            meta: { requiresGuest: true }
+        },
+        {
+            path: '/login-cliente',
+            name: 'loginCliente',
+            component: LoginClienteView,
             meta: { requiresGuest: true }
         },
         {
@@ -31,11 +40,11 @@ const router = createRouter({
         {
             path: '/',
             redirect: () => {
-                if (!authStore.isAuthenticated) return '/login';
+                if (!authStore.isAuthenticated) return loginRoute();
                 return authStore.role === 'CLIENT' ? '/client-panel' : '/dashboard';
             }
         },
-        // --- ADMIN ROUTES ---
+        // ── Admin routes ──────────────────────────────────────────────────────
         {
             path: '/dashboard',
             name: 'dashboard',
@@ -90,7 +99,7 @@ const router = createRouter({
             component: AdminUsuariosView,
             meta: { requiresAuth: true, roles: ['ADMIN'] }
         },
-        // --- CLIENT ROUTES ---
+        // ── Client routes ─────────────────────────────────────────────────────
         {
             path: '/client-panel',
             name: 'clientPanel',
@@ -100,31 +109,43 @@ const router = createRouter({
     ]
 });
 
-// Navigation Guard
 router.beforeEach((to, _from, next) => {
     const isAuthenticated = authStore.isAuthenticated;
-    const userRole = authStore.role;
+    const userRole        = authStore.role;
+    const onClientDomain  = isClientDomain();
 
-    // Check if route requires guest (Login)
-    if (to.meta.requiresGuest && isAuthenticated) {
-        // If we are in a recovery flow (hash contains type=recovery), don't redirect yet
-        if (window.location.hash.includes('type=recovery')) {
-            return next();
-        }
+    // Always allow password recovery
+    if (to.name === 'updatePassword') return next();
+
+    // Redirect bare /login to /login-cliente on client domain (and vice-versa)
+    if (to.name === 'login' && onClientDomain) return next('/login-cliente');
+    if (to.name === 'loginCliente' && !onClientDomain) return next('/login');
+
+    // Guest-only routes (login pages)
+    if (to.meta.requiresGuest) {
+        if (!isAuthenticated) return next();
+        // Recovery flow: let through
+        if (window.location.hash.includes('type=recovery')) return next();
         return next(userRole === 'CLIENT' ? '/client-panel' : '/dashboard');
     }
 
-    // Check if route requires authentication
-    if (to.meta.requiresAuth && !isAuthenticated) {
-        return next('/login');
-    }
+    // Protected routes
+    if (to.meta.requiresAuth) {
+        if (!isAuthenticated) return next(loginRoute());
 
-    // Check role access
-    if (to.meta.roles && Array.isArray(to.meta.roles)) {
-        if (!to.meta.roles.includes(userRole)) {
-            // Unauthorized access, redirect back to home logic
-            return next(userRole === 'CLIENT' ? '/client-panel' : '/dashboard');
+        // Role-based access
+        if (to.meta.roles && Array.isArray(to.meta.roles)) {
+            if (!(to.meta.roles as string[]).includes(userRole ?? '')) {
+                return next(userRole === 'CLIENT' ? '/client-panel' : '/dashboard');
+            }
         }
+
+        // Domain enforcement: block ADMINs from client domain
+        if (onClientDomain && userRole === 'ADMIN') {
+            return next('/login-cliente?error=rol');
+        }
+
+        return next();
     }
 
     next();
