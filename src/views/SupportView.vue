@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import DashboardCard from '../components/DashboardCard.vue';
 import {
   useSupportData, createTicket, updateTicket, deleteTicket,
@@ -7,9 +7,23 @@ import {
   SERVIDOR_COLORS, type Ticket, type Servidor,
 } from '../services/support';
 import { useClientsList } from '../services/clients';
+import { useToast } from '../composables/useToast';
 
 const { tickets, servidores, kpis, loading } = useSupportData();
 const { clients } = useClientsList();
+const toast = useToast();
+
+// ── Búsqueda de tickets ───────────────────────────────────────────────────────
+const searchTickets = ref('');
+const filteredTickets = computed(() => {
+  const q = searchTickets.value.trim().toLowerCase();
+  if (!q) return tickets.value;
+  return tickets.value.filter(t =>
+    t.asunto.toLowerCase().includes(q) ||
+    (t.clientes?.nombre ?? '').toLowerCase().includes(q) ||
+    (t.descripcion ?? '').toLowerCase().includes(q),
+  );
+});
 
 // ── Tickets ──────────────────────────────────────────────────────────────────
 const showTicketModal = ref(false);
@@ -33,11 +47,15 @@ const saveTicket = async () => {
       const updated = await updateTicket(editingId.value, payload);
       const idx = tickets.value.findIndex(t => t.id === editingId.value);
       if (idx !== -1) tickets.value[idx] = updated;
+      toast.success('Ticket actualizado correctamente');
     } else {
       const created = await createTicket(payload);
       tickets.value.unshift(created);
+      toast.success('Ticket creado correctamente');
     }
     showTicketModal.value = false;
+  } catch {
+    toast.error('No se pudo guardar el ticket. Inténtalo de nuevo.');
   } finally { saving.value = false; }
 };
 
@@ -63,8 +81,13 @@ const setSatisfaccion = async (t: Ticket, val: number) => {
 
 const confirmDeleteTicket = async (t: Ticket) => {
   if (!confirm(`¿Eliminar ticket #${t.id} "${t.asunto}"?`)) return;
-  await deleteTicket(t.id);
-  tickets.value = tickets.value.filter(x => x.id !== t.id);
+  try {
+    await deleteTicket(t.id);
+    tickets.value = tickets.value.filter(x => x.id !== t.id);
+    toast.success(`Ticket #${t.id} eliminado`);
+  } catch {
+    toast.error('No se pudo eliminar el ticket.');
+  }
 };
 
 // ── Servidores ────────────────────────────────────────────────────────────────
@@ -177,11 +200,16 @@ const formatTime = (iso: string) => {
         <!-- Tickets -->
         <DashboardCard title="Tickets de Soporte">
           <template #actions>
-            <button class="btn-edit-action" @click="openNew">+ Nuevo Ticket</button>
+            <div class="ticket-actions-header">
+              <input v-model="searchTickets" type="text" placeholder="Buscar tickets…" class="search-input-sm" />
+              <button class="btn-edit-action" @click="openNew">+ Nuevo Ticket</button>
+            </div>
           </template>
-          <div v-if="tickets.length === 0" class="empty-state">Sin tickets registrados</div>
+          <div v-if="filteredTickets.length === 0" class="empty-state">
+            {{ searchTickets ? 'Sin resultados para la búsqueda' : 'Sin tickets registrados' }}
+          </div>
           <div v-else class="tickets-list">
-            <div v-for="t in tickets" :key="t.id" class="ticket-item" :class="{ closed: t.estado === 'Cerrado' }">
+            <div v-for="t in filteredTickets" :key="t.id" class="ticket-item" :class="{ closed: t.estado === 'Cerrado' }">
               <div class="ticket-top">
                 <span class="ticket-id">#{{ t.id }}</span>
                 <span class="ticket-time">{{ formatTime(t.fecha_creacion) }}</span>
@@ -316,7 +344,10 @@ const formatTime = (iso: string) => {
 .server-name { font-weight: 600; }
 .server-uptime { font-size: 0.8rem; color: var(--color-text-muted); margin-left: 1.5rem; }
 
-.btn-edit-action { background: transparent; border: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 0.8rem; padding: 0.3rem 0.7rem; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
+.ticket-actions-header { display: flex; gap: 0.5rem; align-items: center; }
+.search-input-sm { background: var(--color-bg-dark); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.82rem; outline: none; color-scheme: dark; width: 150px; }
+.search-input-sm:focus { border-color: var(--color-primary); }
+.btn-edit-action { background: transparent; border: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 0.8rem; padding: 0.3rem 0.7rem; border-radius: 4px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
 .btn-edit-action:hover { border-color: var(--color-primary); color: var(--color-primary); }
 
 .tickets-list { display: flex; flex-direction: column; gap: 0.75rem; max-height: 450px; overflow-y: auto; }

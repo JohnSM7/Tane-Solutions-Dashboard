@@ -5,13 +5,18 @@ import ClientReportModule from '../components/ClientReportModule.vue';
 import { authStore } from '../store/auth';
 import { useClientProfile } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
+import { generateInvoicePDF, type Factura } from '../services/financial';
+import { createTicket } from '../services/support';
+import { useToast } from '../composables/useToast';
 
 const clientId = authStore.user?.clientId ?? '';
 const {
-    clientData, proyectos, sedes, documentos,
-    financials, loading,
-    uploadDocumento, saveProfile,
-  } = useClientProfile(clientId);
+  clientData, proyectos, sedes, documentos, facturas,
+  financials, loading,
+  uploadDocumento, saveProfile,
+} = useClientProfile(clientId);
+
+const toast = useToast();
 
 const selectedSedeId = ref<number | 'all'>('all');
 
@@ -29,6 +34,67 @@ const filteredSedes = computed(() => {
   if (selectedSedeId.value === 'all') return sedes.value;
   return sedes.value.filter(s => s.id === selectedSedeId.value);
 });
+
+// ── Banner de estado ──────────────────────────────────────────────────────────
+const statusBanner = computed(() => {
+  if (loading.value || !clientData.value) return null;
+  const tieneVencidas  = facturas.value.some((f: Factura) => f.estado === 'Vencida');
+  const tienePendientes = facturas.value.some((f: Factura) => f.estado === 'Pendiente');
+  if (tieneVencidas)   return { level: 'danger',  icon: '⚠️', msg: 'Tienes facturas vencidas. Por favor, contacta con nosotros para regularizar el pago.' };
+  if (tienePendientes) return { level: 'warning', icon: '💳', msg: 'Tienes facturas pendientes de pago. Consúltalas en tu resumen financiero.' };
+  return { level: 'success', icon: '✅', msg: 'Todo al día. No hay ninguna acción pendiente por tu parte.' };
+});
+
+// ── Descargar factura PDF ─────────────────────────────────────────────────────
+const downloadingInvoice = ref<string | null>(null);
+
+const downloadInvoicePdf = async (f: Factura) => {
+  downloadingInvoice.value = f.id;
+  try {
+    await generateInvoicePDF(
+      f,
+      clientData.value
+        ? { nombre: clientData.value.name, cif: clientData.value.cif, direccion_facturacion: clientData.value.direccionFacturacion }
+        : null,
+      f.proyectos_rentabilidad?.nombre ?? '',
+    );
+    toast.success(`Factura ${f.numero_factura ?? ''} descargada`);
+  } catch {
+    toast.error('No se pudo generar el PDF. Inténtalo de nuevo.');
+  } finally {
+    downloadingInvoice.value = null;
+  }
+};
+
+// ── Abrir ticket de soporte ───────────────────────────────────────────────────
+const showTicketModal = ref(false);
+const savingTicket   = ref(false);
+const ticketForm     = ref({ asunto: '', descripcion: '', prioridad: 'Media' as 'Alta' | 'Media' | 'Baja' });
+
+const openTicketModal = () => {
+  ticketForm.value = { asunto: '', descripcion: '', prioridad: 'Media' };
+  showTicketModal.value = true;
+};
+
+const submitTicket = async () => {
+  if (!ticketForm.value.asunto.trim()) return;
+  savingTicket.value = true;
+  try {
+    await createTicket({
+      asunto:      ticketForm.value.asunto.trim(),
+      descripcion: ticketForm.value.descripcion.trim(),
+      cliente_id:  clientId,
+      prioridad:   ticketForm.value.prioridad,
+      estado:      'Abierto',
+    });
+    showTicketModal.value = false;
+    toast.success('Tu solicitud de soporte ha sido enviada. Te responderemos pronto.');
+  } catch {
+    toast.error('No se pudo enviar la solicitud. Inténtalo de nuevo.');
+  } finally {
+    savingTicket.value = false;
+  }
+};
 
 // ── Editar perfil ─────────────────────────────────────────────────────────────
 const showEditModal = ref(false);
@@ -96,23 +162,60 @@ const formatDate = (iso: string) =>
           <img v-if="clientData.logo" :src="clientData.logo" :alt="clientData.name" class="client-logo" @error="(e) => (e.target as HTMLImageElement).style.display = 'none'" />
           <div v-else class="logo-placeholder">{{ clientData.name.charAt(0) }}</div>
           <span class="brand-name">{{ clientData.name }}</span>
-          <button class="btn-sm btn-outline" @click="openEditModal">Editar Mi Perfil</button>
+          <button class="btn-sm btn-soporte" @click="openTicketModal">✉ Soporte</button>
+          <button class="btn-sm btn-outline" @click="openEditModal">Editar Perfil</button>
         </div>
       </div>
 
+      <!-- Banner de estado -->
+      <div v-if="statusBanner" class="status-banner" :class="statusBanner.level">
+        <span class="status-banner-icon">{{ statusBanner.icon }}</span>
+        <span class="status-banner-msg">{{ statusBanner.msg }}</span>
+        <button v-if="statusBanner.level !== 'success'" class="btn-soporte-banner" @click="openTicketModal">
+          Contactar soporte
+        </button>
+      </div>
+
       <!-- Resumen financiero (sólo visible en "todas las sedes") -->
-      <div v-if="selectedSedeId === 'all'" class="fin-summary">
-        <div class="fin-box success">
-          <span class="fin-label">Abonado</span>
-          <span class="fin-value">{{ financials.paid }}</span>
+      <div v-if="selectedSedeId === 'all'" class="fin-section">
+        <div class="fin-summary">
+          <div class="fin-box success">
+            <span class="fin-label">Abonado</span>
+            <span class="fin-value">{{ financials.paid }}</span>
+          </div>
+          <div class="fin-box warning">
+            <span class="fin-label">Por pagar</span>
+            <span class="fin-value">{{ financials.pending }}</span>
+          </div>
+          <div class="fin-box neutral">
+            <span class="fin-label">Total facturado</span>
+            <span class="fin-value">{{ financials.total }}</span>
+          </div>
         </div>
-        <div class="fin-box warning">
-          <span class="fin-label">Por pagar</span>
-          <span class="fin-value">{{ financials.pending }}</span>
-        </div>
-        <div class="fin-box neutral">
-          <span class="fin-label">Total facturado</span>
-          <span class="fin-value">{{ financials.total }}</span>
+
+        <!-- Lista de facturas con descarga PDF -->
+        <div v-if="facturas.length > 0" class="facturas-cliente">
+          <div v-for="f in facturas" :key="f.id" class="factura-row-cliente">
+            <div class="factura-info">
+              <span class="factura-num">{{ f.numero_factura ?? 'Borrador' }}</span>
+              <span class="factura-concepto">{{ f.concepto }}</span>
+              <span class="factura-importe">{{ f.importe.toLocaleString('es-ES') }} €</span>
+            </div>
+            <div class="factura-right-cliente">
+              <span
+                class="factura-estado-badge"
+                :class="f.estado.toLowerCase()"
+              >{{ f.estado }}</span>
+              <button
+                class="btn-pdf-cliente"
+                :disabled="downloadingInvoice === f.id"
+                @click="downloadInvoicePdf(f)"
+                title="Descargar PDF"
+              >
+                {{ downloadingInvoice === f.id ? '⏳' : '⬇' }} PDF
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -207,6 +310,36 @@ const formatDate = (iso: string) =>
 
     <div v-else class="loading-state">No se encontró tu perfil. Contacta con la agencia.</div>
 
+    <!-- Modal: Abrir ticket de soporte -->
+    <div class="modal-overlay" v-if="showTicketModal" @click.self="showTicketModal = false">
+      <div class="modal-box">
+        <p class="modal-title">✉ Solicitud de Soporte</p>
+        <p class="modal-subtitle">Describe tu consulta y nos pondremos en contacto contigo lo antes posible.</p>
+        <div class="form-group">
+          <label>Asunto *</label>
+          <input v-model="ticketForm.asunto" class="form-input" placeholder="Ej: Problema con mi factura de marzo" maxlength="120" />
+        </div>
+        <div class="form-group">
+          <label>Descripción</label>
+          <textarea v-model="ticketForm.descripcion" class="form-input" rows="4" placeholder="Cuéntanos con más detalle qué necesitas…"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Urgencia</label>
+          <select v-model="ticketForm.prioridad" class="form-input">
+            <option value="Baja">Normal — No es urgente</option>
+            <option value="Media">Media — En los próximos días</option>
+            <option value="Alta">Alta — Lo antes posible</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-text" @click="showTicketModal = false">Cancelar</button>
+          <button class="btn-primary" @click="submitTicket" :disabled="savingTicket || !ticketForm.asunto.trim()">
+            {{ savingTicket ? 'Enviando…' : 'Enviar solicitud' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal: Editar perfil -->
     <div class="modal-overlay" v-if="showEditModal" @click.self="showEditModal = false">
       <div class="modal-box">
@@ -243,7 +376,29 @@ const formatDate = (iso: string) =>
 .btn-sm { padding: 0.3rem 0.6rem; font-size: 0.8rem; border-radius: 4px; cursor: pointer; }
 .btn-outline { background: transparent; border: 1px dashed var(--color-text-muted); color: var(--color-text-muted); }
 .btn-outline:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.btn-soporte { background: rgba(227,255,4,0.12); border: 1px solid rgba(227,255,4,0.4); color: var(--color-primary); font-weight: 700; }
+.btn-soporte:hover { background: rgba(227,255,4,0.2); }
 
+/* ── Status banner ─── */
+.status-banner {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.9rem 1.25rem; border-radius: 10px; border: 1px solid transparent;
+  font-size: 0.9rem; flex-wrap: wrap;
+}
+.status-banner.success { background: rgba(74,222,128,0.08); border-color: rgba(74,222,128,0.3); color: #4ade80; }
+.status-banner.warning { background: rgba(255,165,0,0.08); border-color: rgba(255,165,0,0.3); color: #ffa500; }
+.status-banner.danger  { background: rgba(255,68,68,0.08);  border-color: rgba(255,68,68,0.3);  color: #f87171; }
+.status-banner-icon { font-size: 1.2rem; flex-shrink: 0; }
+.status-banner-msg  { flex: 1; color: var(--color-text-light); }
+.btn-soporte-banner {
+  background: transparent; border: 1px solid currentColor; color: inherit;
+  padding: 0.3rem 0.8rem; border-radius: 6px; font-size: 0.8rem; font-weight: 700; cursor: pointer;
+  transition: background 0.2s; white-space: nowrap;
+}
+.btn-soporte-banner:hover { background: rgba(255,255,255,0.1); }
+
+/* ── Financial section ─── */
+.fin-section { display: flex; flex-direction: column; gap: 1rem; }
 .fin-summary { display: flex; gap: 1rem; }
 .fin-box { flex: 1; background: var(--color-bg-card); border: 1px solid transparent; padding: 1.25rem; border-radius: 10px; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .fin-box.success { border-color: rgba(74,222,128,0.3); color: #4ade80; }
@@ -251,6 +406,36 @@ const formatDate = (iso: string) =>
 .fin-box.neutral { border-color: var(--color-border); }
 .fin-label { font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 0.4rem; }
 .fin-value { font-size: 1.6rem; font-weight: 700; }
+
+/* ── Facturas cliente ─── */
+.facturas-cliente { display: flex; flex-direction: column; gap: 0.5rem; }
+.factura-row-cliente {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.7rem 1rem; background: var(--color-bg-card);
+  border: 1px solid var(--color-border); border-radius: 8px; flex-wrap: wrap;
+}
+.factura-info { display: flex; align-items: center; gap: 0.75rem; flex: 1; min-width: 0; flex-wrap: wrap; }
+.factura-num { font-family: monospace; font-size: 0.8rem; color: var(--color-primary); font-weight: 700; white-space: nowrap; }
+.factura-concepto { font-size: 0.88rem; color: var(--color-text-light); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 80px; }
+.factura-importe { font-weight: 700; font-size: 0.9rem; white-space: nowrap; }
+.factura-right-cliente { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.factura-estado-badge {
+  font-size: 0.72rem; font-weight: 700; padding: 0.2rem 0.5rem;
+  border-radius: 4px; white-space: nowrap;
+}
+.factura-estado-badge.pagada   { background: rgba(74,222,128,0.15); color: #4ade80; }
+.factura-estado-badge.pendiente{ background: rgba(255,165,0,0.15);  color: #ffa500; }
+.factura-estado-badge.vencida  { background: rgba(255,68,68,0.15);  color: #f87171; }
+.btn-pdf-cliente {
+  background: transparent; border: 1px solid var(--color-border); color: var(--color-text-muted);
+  padding: 0.28rem 0.65rem; border-radius: 6px; font-size: 0.78rem; font-weight: 700;
+  cursor: pointer; transition: border-color 0.2s, color 0.2s; white-space: nowrap;
+}
+.btn-pdf-cliente:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
+.btn-pdf-cliente:disabled { opacity: 0.5; cursor: default; }
+
+/* Modal subtitle */
+.modal-subtitle { font-size: 0.85rem; color: var(--color-text-muted); margin: -0.75rem 0 1.25rem; }
 
 .content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
 @media (max-width: 900px) {
