@@ -104,7 +104,7 @@ export function useClientReports(clientId: string) {
       .eq('id', id);
     if (!err) {
       const idx = informes.value.findIndex(i => i.id === id);
-      if (idx !== -1) Object.assign(informes.value[idx], updates);
+      if (idx !== -1) Object.assign(informes.value[idx]!, updates);
     }
   };
 
