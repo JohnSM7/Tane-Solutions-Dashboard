@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import DashboardCard from '../components/DashboardCard.vue';
 import { useClientsList } from '../services/clients';
+import { supabase } from '../supabase';
 import {
   useUsuariosAdmin, crearUsuario, eliminarUsuario, enviarResetPassword,
   actualizarPerfilUsuario, actualizarEmailUsuario,
@@ -58,6 +59,19 @@ const handleCrear = async () => {
       horas_disponibles_semana: crearForm.value.rol === 'ADMIN' ? crearForm.value.horas_disponibles_semana : 40,
     });
     usuarios.value.push(nuevo);
+
+    // Enviar email de bienvenida con credenciales
+    supabase.functions.invoke('send-email', { body: {
+      type: 'welcome',
+      nombre: crearForm.value.nombre,
+      email: crearForm.value.email,
+      password: crearForm.value.password,
+      rol: crearForm.value.rol,
+      loginUrl: crearForm.value.rol === 'CLIENT'
+        ? `${window.location.origin.replace('dashboard', 'clientes')}/login-cliente`
+        : `${window.location.origin}/login`,
+    }}).catch(console.warn);
+
     showCrearModal.value = false;
     resetCrearForm();
   } catch (e: any) {

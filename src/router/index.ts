@@ -92,6 +92,12 @@ const router = createRouter({
             component: () => import('../views/TareasView.vue'),
             meta: { requiresAuth: true, roles: ['ADMIN'] }
         },
+        {
+            path: '/calendario',
+            name: 'calendario',
+            component: () => import('../views/CalendarioView.vue'),
+            meta: { requiresAuth: true, roles: ['ADMIN'] }
+        },
         // ── Client routes ─────────────────────────────────────────────────────
         {
             path: '/client-panel',

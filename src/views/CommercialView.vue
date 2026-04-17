@@ -7,8 +7,16 @@ import {
 } from '../services/commercial';
 import { createProyectoRentabilidad, createFacturasFromPlan } from '../services/financial';
 import { createClient } from '../services/clients';
+import { exportCsv } from '../utils/exportCsv';
 
 const { leads, kpis, pipeline, topServices, loading } = useCommercialData();
+
+const exportLeads = () => exportCsv('leads.csv', leads.value.map(l => ({
+  Empresa: l.empresa, Nombre: l.nombre, Email: l.email ?? '',
+  Servicio: l.servicio, Estado: l.estado,
+  'Valor estimado': l.valor_estimado,
+  'Fecha creación': (l as any).created_at?.slice(0, 10) ?? '',
+})));
 
 // ── Modal nuevo/editar lead ──────────────────────────────────────────────────
 const showModal = ref(false);
@@ -212,6 +220,7 @@ const formatDate = (iso: string) =>
               <option v-for="s in PIPELINE_STAGES" :key="s" :value="s">{{ s }}</option>
               <option value="Cerrado-Perdido">Cerrado-Perdido</option>
             </select>
+            <button class="btn-outline-sm" @click="exportLeads">↓ CSV</button>
             <button class="btn-primary-sm" @click="openNew">+ Nuevo Lead</button>
           </div>
         </template>
@@ -372,6 +381,8 @@ const formatDate = (iso: string) =>
 .search-input-sm:focus { border-color: var(--color-primary); }
 .filter-select { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.85rem; outline: none; color-scheme: dark; }
 .btn-primary-sm { background: var(--color-primary); color: #000; font-weight: 700; font-size: 0.85rem; padding: 0.35rem 0.9rem; border: none; border-radius: 4px; cursor: pointer; }
+.btn-outline-sm { background: transparent; border: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 0.82rem; padding: 0.32rem 0.75rem; border-radius: 4px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+.btn-outline-sm:hover { border-color: var(--color-primary); color: var(--color-primary); }
 
 .data-table { width: 100%; border-collapse: collapse; }
 .data-table th, .data-table td { padding: 0.85rem 0.75rem; text-align: left; border-bottom: 1px solid var(--color-border); }

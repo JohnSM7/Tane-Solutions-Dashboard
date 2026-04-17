@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import DashboardCard from '../components/DashboardCard.vue';
+import BillingChart from '../components/BillingChart.vue';
 import {
   useFinancialData,
   createFactura, updateFactura, deleteFactura,
@@ -9,9 +10,19 @@ import {
   PLANES_PAGO, TIPOS_IVA, type Factura, type ProyectoRentabilidad,
 } from '../services/financial';
 import { useClientsList } from '../services/clients';
+import { exportCsv } from '../utils/exportCsv';
 
 const { facturas, proyectos, proyectosConFacturas, kpis, monthlyBilling, loading } = useFinancialData();
 const { clients } = useClientsList();
+
+const exportFacturas = () => exportCsv('facturas.csv', facturas.value.map(f => ({
+  Número: f.numero_factura ?? '',
+  Concepto: f.concepto,
+  Cliente: (f as any).clientes?.nombre ?? '',
+  Importe: f.importe,
+  Estado: f.estado,
+  'Fecha emisión': f.fecha_emision,
+})));
 
 // ── Proyectos: expansión ──────────────────────────────────────────────────────
 const expandedProjectId = ref<string | null>(null);
@@ -326,20 +337,11 @@ const rentabilidadClientes = computed(() => {
       <!-- Gráfica -->
       <div class="content-grid">
         <DashboardCard title="Facturación Mes a Mes">
+          <template #actions>
+            <button class="btn-action" @click="exportFacturas">↓ CSV</button>
+          </template>
           <div v-if="facturas.length === 0" class="empty-chart">Añade proyectos para ver la gráfica</div>
-          <div v-else class="chart-container">
-            <div class="bars">
-              <div v-for="item in monthlyBilling" :key="item.month" class="bar-group">
-                <div class="bar prev" :style="{ height: (item.prev || 2) + '%' }" :title="`Año ant: ${item.prevRaw?.toLocaleString('es-ES')} €`"></div>
-                <div class="bar current" :style="{ height: (item.current || 2) + '%' }" :title="`Este año: ${item.currentRaw?.toLocaleString('es-ES')} €`"></div>
-                <span class="bar-label">{{ item.month }}</span>
-              </div>
-            </div>
-            <div class="legend">
-              <span class="legend-item"><span class="dot prev"></span>Año anterior</span>
-              <span class="legend-item"><span class="dot current"></span>Año actual</span>
-            </div>
-          </div>
+          <BillingChart v-else :data="monthlyBilling" />
         </DashboardCard>
 
         <!-- Resumen rápido facturas sueltas -->

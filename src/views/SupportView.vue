@@ -8,10 +8,19 @@ import {
 } from '../services/support';
 import { useClientsList } from '../services/clients';
 import { useToast } from '../composables/useToast';
+import { exportCsv } from '../utils/exportCsv';
 
 const { tickets, servidores, kpis, loading } = useSupportData();
 const { clients } = useClientsList();
 const toast = useToast();
+
+const exportTickets = () => exportCsv('tickets.csv', tickets.value.map(t => ({
+  ID: t.id, Asunto: t.asunto,
+  Cliente: t.clientes?.nombre ?? '',
+  Estado: t.estado, Prioridad: t.prioridad,
+  'Fecha creación': t.fecha_creacion?.slice(0, 10) ?? '',
+  'Fecha cierre': t.fecha_cierre?.slice(0, 10) ?? '',
+})));
 
 // ── Búsqueda de tickets ───────────────────────────────────────────────────────
 const searchTickets = ref('');
@@ -227,6 +236,7 @@ const formatTime = (iso: string) => {
           <template #actions>
             <div class="ticket-actions-header">
               <input v-model="searchTickets" type="text" placeholder="Buscar tickets…" class="search-input-sm" />
+              <button class="btn-outline-sm" @click="exportTickets">↓ CSV</button>
               <button class="btn-edit-action" @click="openNew">+ Nuevo Ticket</button>
             </div>
           </template>
@@ -374,6 +384,8 @@ const formatTime = (iso: string) => {
 .search-input-sm:focus { border-color: var(--color-primary); }
 .btn-edit-action { background: transparent; border: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 0.8rem; padding: 0.3rem 0.7rem; border-radius: 4px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
 .btn-edit-action:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.btn-outline-sm { background: transparent; border: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 0.82rem; padding: 0.3rem 0.7rem; border-radius: 4px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+.btn-outline-sm:hover { border-color: var(--color-primary); color: var(--color-primary); }
 
 .tickets-list { display: flex; flex-direction: column; gap: 0.75rem; max-height: 450px; overflow-y: auto; }
 .ticket-item { background: rgba(255,255,255,0.03); border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem; }
