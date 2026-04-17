@@ -29,6 +29,7 @@ export type ProyectoRentabilidad = {
   presupuesto: number;
   coste: number;
   plan_pago: '100' | '50/50' | '40/60' | '33/33/34' | 'personalizado';
+  personalizado_pagos?: { etiqueta: string; importe: number }[];
   fecha_inicio: string;
   fecha_fin: string | null;
   clientes?: { nombre: string };
@@ -85,16 +86,26 @@ export async function createFacturasFromPlan(
   project: ProyectoRentabilidad,
   clienteId: string | null,
 ): Promise<Factura[]> {
-  const plan = (PLANES_PAGO[project.plan_pago] || PLANES_PAGO['100'])!;
   const creadas: Factura[] = [];
+  let pagos: { etiqueta: string; importe: number }[] = [];
 
-  for (let i = 0; i < plan.pagos.length; i++) {
-    const pct = plan.pagos[i]!;
-    const importe = Math.round(project.presupuesto * pct / 100);
-    const etiqueta = plan.pagos.length === 1
-      ? project.nombre
-      : `${project.nombre} — Pago ${i + 1} de ${plan.pagos.length} (${pct}%)`;
+  if (project.plan_pago === 'personalizado' && project.personalizado_pagos && project.personalizado_pagos.length > 0) {
+    pagos = project.personalizado_pagos.map(p => ({
+      etiqueta: p.etiqueta || project.nombre,
+      importe: p.importe
+    }));
+  } else {
+    const plan = (PLANES_PAGO[project.plan_pago] || PLANES_PAGO['100'])!;
+    pagos = plan.pagos.map((pct, i) => ({
+      etiqueta: plan.pagos.length === 1
+        ? project.nombre
+        : `${project.nombre} — Pago ${i + 1} de ${plan.pagos.length} (${pct}%)`,
+      importe: Math.round(project.presupuesto * pct / 100)
+    }));
+  }
 
+  for (let i = 0; i < pagos.length; i++) {
+    const p = pagos[i]!;
     const numero = await nextInvoiceNumber();
 
     const { data, error } = await supabase
@@ -103,12 +114,12 @@ export async function createFacturasFromPlan(
         cliente_id: clienteId,
         proyecto_id: project.id,
         numero_factura: numero,
-        concepto: etiqueta,
-        importe,
+        concepto: p.etiqueta,
+        importe: p.importe,
         tipo_iva: 21,
         estado: 'Pendiente',
         pago_numero: i + 1,
-        pago_total: plan.pagos.length,
+        pago_total: pagos.length,
         fecha_emision: new Date().toISOString().split('T')[0],
       })
       .select('*')

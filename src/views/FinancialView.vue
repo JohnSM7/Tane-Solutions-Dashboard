@@ -40,13 +40,17 @@ const prError = ref('');
 
 const emptyPr = (): Partial<ProyectoRentabilidad> => ({
   nombre: '', cliente_id: '', presupuesto: 0, coste: 0, plan_pago: '50/50',
+  personalizado_pagos: [],
   fecha_inicio: new Date().toISOString().split('T')[0], fecha_fin: '',
 });
 const prForm = ref<Partial<ProyectoRentabilidad>>(emptyPr());
 
 const openNewPr = () => { prForm.value = emptyPr(); editingPrId.value = null; prError.value = ''; showPrModal.value = true; };
 const openEditPr = (p: ProyectoRentabilidad) => {
-  prForm.value = { ...p }; editingPrId.value = p.id; prError.value = ''; showPrModal.value = true;
+  prForm.value = { ...p, personalizado_pagos: p.personalizado_pagos || [] };
+  editingPrId.value = p.id;
+  prError.value = '';
+  showPrModal.value = true;
 };
 
 const patchProyectoCliente = (p: ProyectoRentabilidad) => {
@@ -68,6 +72,16 @@ const savePr = async () => {
     const payload = { ...prForm.value };
     if (!payload.fecha_fin) delete payload.fecha_fin;
     if (!payload.cliente_id) delete payload.cliente_id;
+
+    // Validación para plan personalizado: La suma de hitos debe coincidir con el presupuesto
+    if (payload.plan_pago === 'personalizado') {
+      const totalHitos = payload.personalizado_pagos?.reduce((sum, p) => sum + (p.importe || 0), 0) || 0;
+      if (Math.abs(totalHitos - (payload.presupuesto || 0)) > 0.01) {
+        prError.value = `La suma de los hitos (${totalHitos.toFixed(2)}€) no coincide con el presupuesto (${payload.presupuesto?.toFixed(2)}€).`;
+        savingP.value = false;
+        return;
+      }
+    }
 
     if (editingPrId.value) {
       const updated = await updateProyectoRentabilidad(editingPrId.value, payload);
@@ -549,17 +563,42 @@ const rentabilidadClientes = computed(() => {
           <label>Plan de cobro</label>
           <select v-model="prForm.plan_pago" class="form-input">
             <option v-for="(plan, key) in PLANES_PAGO" :key="key" :value="key">{{ plan.label }}</option>
+            <option value="personalizado">✨ Personalizado (importes variables)</option>
           </select>
         </div>
 
+        <!-- Bloque para pagos personalizados -->
+        <div v-if="prForm.plan_pago === 'personalizado'" class="custom-plan-manager">
+          <p class="section-subtitle">Hitos de pago personalizados</p>
+          <div v-for="(pago, i) in prForm.personalizado_pagos" :key="i" class="custom-pago-row">
+            <input v-model="pago.etiqueta" placeholder="Concepto (ej. Pago Inicial)" class="form-input flex-2" />
+            <div class="importe-input-wrapper">
+              <input v-model.number="pago.importe" type="number" step="0.01" placeholder="0.00" class="form-input" />
+              <span class="currency-label">€</span>
+            </div>
+            <button class="btn-icon-text danger" @click="prForm.personalizado_pagos!.splice(i, 1)" title="Eliminar hito">🗑️</button>
+          </div>
+          <button class="btn-add-pago" @click="prForm.personalizado_pagos!.push({ etiqueta: '', importe: 0 })">
+            + Añadir hito de pago
+          </button>
+          
+          <div class="custom-plan-total" :class="{ error: (prForm.personalizado_pagos?.reduce((s, p) => s + p.importe, 0) || 0) !== (prForm.presupuesto || 0) }">
+            Total en hitos: <strong>{{ (prForm.personalizado_pagos?.reduce((s, p) => s + p.importe, 0) || 0).toLocaleString('es-ES') }} €</strong>
+            / {{ (prForm.presupuesto || 0).toLocaleString('es-ES') }} €
+          </div>
+        </div>
+
         <!-- Preview de facturas que se generarán -->
-        <div v-if="!editingPrId && prForm.presupuesto && prForm.plan_pago" class="facturas-preview">
+        <div v-if="!editingPrId && prForm.presupuesto && prForm.plan_pago !== 'personalizado'" class="facturas-preview">
           <p class="preview-title">Se crearán automáticamente:</p>
           <div v-for="(pct, i) in PLANES_PAGO[prForm.plan_pago!]?.pagos" :key="i" class="preview-row">
             <span>Factura {{ i + 1 }}</span>
             <span>{{ pct }}%</span>
             <strong>{{ new Intl.NumberFormat('es-ES').format(Math.round((prForm.presupuesto ?? 0) * pct / 100)) }} €</strong>
           </div>
+        </div>
+        <div v-if="!editingPrId && prForm.plan_pago === 'personalizado' && prForm.personalizado_pagos?.length" class="facturas-preview">
+           <p class="preview-title">Se crearán {{ prForm.personalizado_pagos.length }} facturas personalizadas.</p>
         </div>
 
         <div class="form-row">
@@ -881,4 +920,16 @@ const rentabilidadClientes = computed(() => {
   .rent-row span:nth-child(4),
   .rent-row span:nth-child(5) { display: none; }
 }
+/* Plan Personalizado */
+.custom-plan-manager { background: rgba(0,0,0,0.2); border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.section-subtitle { font-size: 0.82rem; font-weight: 700; color: var(--color-primary); text-transform: uppercase; margin-bottom: 0.25rem; }
+.custom-pago-row { display: flex; gap: 0.5rem; align-items: center; }
+.flex-2 { flex: 2; }
+.importe-input-wrapper { position: relative; flex: 1; min-width: 100px; }
+.currency-label { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); font-size: 0.85rem; }
+.btn-add-pago { background: transparent; border: 1px dashed var(--color-border); color: var(--color-primary); padding: 0.5rem; border-radius: 6px; cursor: pointer; font-size: 0.85rem; width: 100%; transition: all 0.2s; }
+.btn-add-pago:hover { background: rgba(227,255,4,0.05); border-color: var(--color-primary); }
+.custom-plan-total { font-size: 0.8rem; text-align: right; color: var(--color-text-muted); margin-top: 0.25rem; }
+.custom-plan-total.error { color: #f87171; }
+.custom-plan-total strong { color: var(--color-text-light); }
 </style>

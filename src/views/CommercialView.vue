@@ -5,6 +5,8 @@ import {
   useCommercialData, createLead, updateLead, deleteLead,
   PIPELINE_STAGES, ESTADO_COLORS, type Lead,
 } from '../services/commercial';
+import { createProyectoRentabilidad, createFacturasFromPlan } from '../services/financial';
+import { createClient } from '../services/clients';
 
 const { leads, kpis, pipeline, topServices, loading } = useCommercialData();
 
@@ -39,9 +41,17 @@ const saveLead = async () => {
       const updated = await updateLead(editingId.value, form.value);
       const idx = leads.value.findIndex(l => l.id === editingId.value);
       if (idx !== -1) leads.value[idx] = updated;
+      
+      if (updated.estado === 'Cerrado-Ganado') {
+        await handleCierreGanado(updated);
+      }
     } else {
       const created = await createLead(form.value);
       leads.value.unshift(created);
+      
+      if (created.estado === 'Cerrado-Ganado') {
+        await handleCierreGanado(created);
+      }
     }
     showModal.value = false;
   } catch (error: any) {
@@ -49,6 +59,44 @@ const saveLead = async () => {
     alert('Error al guardar: ' + (error.message || 'No se pudo completar la operación'));
   } finally {
     saving.value = false;
+  }
+};
+
+const handleCierreGanado = async (lead: Lead) => {
+  try {
+    let clientId = lead.cliente_id;
+    
+    // 1. Si el lead no está vinculado a un cliente, creamos el cliente automáticamente
+    if (!clientId) {
+      const newClient = await createClient({
+        name: lead.empresa || lead.nombre,
+        contact: lead.nombre,
+        contactEmail: lead.email,
+        industry: lead.servicio || 'Marketing/Ventas',
+        status: 'Activo'
+      });
+      clientId = newClient.id;
+      // Actualizamos el lead para que quede constancia del vínculo
+      await updateLead(lead.id, { cliente_id: clientId });
+    }
+
+    // 2. Creamos el proyecto en el módulo financiero
+    const project = await createProyectoRentabilidad({
+      nombre: `Proyecto: ${lead.empresa || lead.nombre}`,
+      cliente_id: clientId,
+      presupuesto: lead.valor_estimado,
+      coste: 0,
+      plan_pago: '50/50', // Plan predeterminado
+      fecha_inicio: new Date().toISOString().split('T')[0]
+    });
+
+    // 3. Generamos las facturas iniciales según el plan
+    await createFacturasFromPlan(project, clientId);
+    
+    console.log('[handleCierreGanado] Proyecto y facturas creados con éxito');
+  } catch (err) {
+    console.error('[handleCierreGanado] Error en automatización:', err);
+    alert('Lead cerrado, pero hubo un problema creando el proyecto financiero. Por favor, créalo manualmente.');
   }
 };
 
@@ -60,13 +108,22 @@ const confirmDelete = async (lead: Lead) => {
 
 // ── Cambio rápido de estado desde la tabla ───────────────────────────────────
 const changeEstado = async (lead: Lead, estado: string) => {
-  const updates: Partial<Lead> = { estado: estado as Lead['estado'] };
-  if (estado === 'Cerrado-Ganado' || estado === 'Cerrado-Perdido') {
-    updates.fecha_cierre = new Date().toISOString();
+  try {
+    const updates: Partial<Lead> = { estado: estado as Lead['estado'] };
+    if (estado === 'Cerrado-Ganado' || estado === 'Cerrado-Perdido') {
+      updates.fecha_cierre = new Date().toISOString();
+    }
+    const updated = await updateLead(lead.id, updates);
+    const idx = leads.value.findIndex(l => l.id === lead.id);
+    if (idx !== -1) leads.value[idx] = updated;
+
+    if (estado === 'Cerrado-Ganado') {
+      await handleCierreGanado(updated);
+    }
+  } catch (error: any) {
+    console.error('[changeEstado] Error:', error);
+    alert('Error al cambiar estado: ' + (error.message || 'Error desconocido'));
   }
-  const updated = await updateLead(lead.id, updates);
-  const idx = leads.value.findIndex(l => l.id === lead.id);
-  if (idx !== -1) leads.value[idx] = updated;
 };
 
 // ── Filtros ──────────────────────────────────────────────────────────────────
