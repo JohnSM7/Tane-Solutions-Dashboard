@@ -97,9 +97,14 @@ const savePr = async () => {
 
 const removePr = async (p: ProyectoRentabilidad) => {
   if (!confirm(`¿Eliminar "${p.nombre}"? También se eliminarán sus facturas asociadas.`)) return;
-  await deleteProyectoRentabilidad(p.id);
-  proyectos.value = proyectos.value.filter(x => x.id !== p.id);
-  facturas.value = facturas.value.filter(f => f.proyecto_id !== p.id);
+  try {
+    await deleteProyectoRentabilidad(p.id);
+    proyectos.value = proyectos.value.filter(x => x.id !== p.id);
+    facturas.value = facturas.value.filter(f => f.proyecto_id !== p.id);
+  } catch (error: any) {
+    console.error('[removePr] Error:', error);
+    alert('Error al eliminar el proyecto: ' + (error.message || 'Error desconocido'));
+  }
 };
 
 // ── Modal: Factura manual (sin proyecto) ─────────────────────────────────────
@@ -145,25 +150,40 @@ const saveFactura = async () => {
       facturas.value.unshift(created);
     }
     showFacturaModal.value = false;
-  } finally { savingF.value = false; }
+  } catch (error: any) {
+    console.error('[saveFactura] Error:', error);
+    alert('Error al guardar la factura: ' + (error.message || 'Error desconocido'));
+  } finally {
+    savingF.value = false;
+  }
 };
 
 const removeFactura = async (f: Factura) => {
   if (!confirm(`¿Eliminar factura "${f.concepto}"?`)) return;
-  await deleteFactura(f.id);
-  facturas.value = facturas.value.filter(x => x.id !== f.id);
+  try {
+    await deleteFactura(f.id);
+    facturas.value = facturas.value.filter(x => x.id !== f.id);
+  } catch (error: any) {
+    console.error('[removeFactura] Error:', error);
+    alert('Error al eliminar la factura: ' + (error.message || 'Error desconocido'));
+  }
 };
 
 // ── Cambio rápido de estado ───────────────────────────────────────────────────
 const cambiarEstado = async (f: Factura, estado: Factura['estado']) => {
-  const updates: Partial<Factura> = { estado };
-  if (estado === 'Pagada') updates.fecha_pago = new Date().toISOString().split('T')[0];
-  const updated = await updateFactura(f.id, updates);
-  // Preserve join data since updateFactura no longer returns nested objects
-  updated.clientes = f.clientes;
-  updated.proyectos_rentabilidad = f.proyectos_rentabilidad;
-  const idx = facturas.value.findIndex(x => x.id === f.id);
-  if (idx !== -1) facturas.value[idx] = updated;
+  try {
+    const updates: Partial<Factura> = { estado };
+    if (estado === 'Pagada') updates.fecha_pago = new Date().toISOString().split('T')[0];
+    const updated = await updateFactura(f.id, updates);
+    // Preserve join data since updateFactura no longer returns nested objects
+    updated.clientes = f.clientes;
+    updated.proyectos_rentabilidad = f.proyectos_rentabilidad;
+    const idx = facturas.value.findIndex(x => x.id === f.id);
+    if (idx !== -1) facturas.value[idx] = updated;
+  } catch (error: any) {
+    console.error('[cambiarEstado] Error:', error);
+    alert('Error al cambiar el estado: ' + (error.message || 'Error desconocido'));
+  }
 };
 
 // ── PDF ───────────────────────────────────────────────────────────────────────
@@ -176,6 +196,9 @@ const downloadPDF = async (f: Factura) => {
       ? { nombre: f.clientes.nombre, cif: f.clientes.cif, direccion_facturacion: f.clientes.direccion_facturacion }
       : null;
     await generateInvoicePDF(f, cliente, f.proyectos_rentabilidad?.nombre ?? '');
+  } catch (error: any) {
+    console.error('[downloadPDF] Error:', error);
+    alert('Error al generar el PDF: ' + (error.message || 'Error desconocido'));
   } finally {
     downloadingPDF.value = false;
   }

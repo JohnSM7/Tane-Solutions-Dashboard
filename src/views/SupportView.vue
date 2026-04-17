@@ -38,33 +38,53 @@ const saveTicket = async () => {
       tickets.value.unshift(created);
     }
     showTicketModal.value = false;
-  } finally { saving.value = false; }
+  } catch (error: any) {
+    console.error('[saveTicket] Error:', error);
+    alert('Error al guardar el ticket: ' + (error.message || 'Error desconocido'));
+  } finally {
+    saving.value = false;
+  }
 };
 
 const cambiarEstadoTicket = async (t: Ticket, estado: string) => {
-  const updates: Partial<Ticket> = { estado: estado as Ticket['estado'] };
-  if (estado === 'En proceso' && !t.fecha_primera_respuesta) {
-    updates.fecha_primera_respuesta = new Date().toISOString();
+  try {
+    const updates: Partial<Ticket> = { estado: estado as Ticket['estado'] };
+    if (estado === 'En proceso' && !t.fecha_primera_respuesta) {
+      updates.fecha_primera_respuesta = new Date().toISOString();
+    }
+    if (estado === 'Cerrado') {
+      updates.fecha_cierre = new Date().toISOString();
+      if (!t.fecha_primera_respuesta) updates.fecha_primera_respuesta = new Date().toISOString();
+    }
+    const updated = await updateTicket(t.id, updates);
+    const idx = tickets.value.findIndex(x => x.id === t.id);
+    if (idx !== -1) tickets.value[idx] = updated;
+  } catch (error: any) {
+    console.error('[cambiarEstadoTicket] Error:', error);
+    alert('Error al cambiar el estado del ticket: ' + (error.message || 'Error desconocido'));
   }
-  if (estado === 'Cerrado') {
-    updates.fecha_cierre = new Date().toISOString();
-    if (!t.fecha_primera_respuesta) updates.fecha_primera_respuesta = new Date().toISOString();
-  }
-  const updated = await updateTicket(t.id, updates);
-  const idx = tickets.value.findIndex(x => x.id === t.id);
-  if (idx !== -1) tickets.value[idx] = updated;
 };
 
 const setSatisfaccion = async (t: Ticket, val: number) => {
-  const updated = await updateTicket(t.id, { satisfaccion: val });
-  const idx = tickets.value.findIndex(x => x.id === t.id);
-  if (idx !== -1) tickets.value[idx] = updated;
+  try {
+    const updated = await updateTicket(t.id, { satisfaccion: val });
+    const idx = tickets.value.findIndex(x => x.id === t.id);
+    if (idx !== -1) tickets.value[idx] = updated;
+  } catch (error: any) {
+    console.error('[setSatisfaccion] Error:', error);
+    alert('Error al guardar la valoración: ' + (error.message || 'Error desconocido'));
+  }
 };
 
 const confirmDeleteTicket = async (t: Ticket) => {
   if (!confirm(`¿Eliminar ticket #${t.id} "${t.asunto}"?`)) return;
-  await deleteTicket(t.id);
-  tickets.value = tickets.value.filter(x => x.id !== t.id);
+  try {
+    await deleteTicket(t.id);
+    tickets.value = tickets.value.filter(x => x.id !== t.id);
+  } catch (error: any) {
+    console.error('[confirmDeleteTicket] Error:', error);
+    alert('Error al eliminar el ticket: ' + (error.message || 'Error desconocido'));
+  }
 };
 
 // ── Servidores ────────────────────────────────────────────────────────────────
@@ -89,19 +109,34 @@ const saveServidor = async () => {
       servidores.value.push(created);
     }
     showServidorModal.value = false;
-  } finally { savingServidor.value = false; }
+  } catch (error: any) {
+    console.error('[saveServidor] Error:', error);
+    alert('Error al guardar el servidor: ' + (error.message || 'Error desconocido'));
+  } finally {
+    savingServidor.value = false;
+  }
 };
 
 const confirmDeleteServidor = async (s: Servidor) => {
   if (!confirm(`¿Eliminar servidor "${s.nombre}"?`)) return;
-  await deleteServidor(s.id);
-  servidores.value = servidores.value.filter(x => x.id !== s.id);
+  try {
+    await deleteServidor(s.id);
+    servidores.value = servidores.value.filter(x => x.id !== s.id);
+  } catch (error: any) {
+    console.error('[confirmDeleteServidor] Error:', error);
+    alert('Error al eliminar el servidor: ' + (error.message || 'Error desconocido'));
+  }
 };
 
 const cambiarEstadoServidor = async (id: string, estado: string) => {
-  const updated = await updateServidor(id, { estado: estado as any });
-  const idx = servidores.value.findIndex(s => s.id === id);
-  if (idx !== -1) servidores.value[idx] = updated;
+  try {
+    const updated = await updateServidor(id, { estado: estado as any });
+    const idx = servidores.value.findIndex(s => s.id === id);
+    if (idx !== -1) servidores.value[idx] = updated;
+  } catch (error: any) {
+    console.error('[cambiarEstadoServidor] Error:', error);
+    alert('Error al cambiar el estado del servidor: ' + (error.message || 'Error desconocido'));
+  }
 };
 
 // ── Utils ────────────────────────────────────────────────────────────────────

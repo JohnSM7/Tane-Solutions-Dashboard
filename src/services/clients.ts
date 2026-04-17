@@ -152,8 +152,9 @@ export function useClientProfile(clientId: string) {
     supabase.from('proyectos').select('*, sedes(nombre)').eq('cliente_id', clientId).order('fecha_inicio', { ascending: false }),
     supabase.from('sedes').select('*').eq('cliente_id', clientId).order('id'),
     supabase.from('documentos').select('*').eq('cliente_id', clientId).order('creado_en', { ascending: false }),
-    supabase.from('perfiles').select('id, nombre, rol').eq('cliente_id', clientId),
+    supabase.from('usuarios').select('id, nombre, rol').eq('cliente_id', clientId),
   ]).then(([clientRes, facturasRes, proyectosRes, sedesRes, docsRes, usersRes]) => {
+    if (clientRes.error) console.error('[useClientProfile] Error fetch cliente:', clientRes.error);
     clientData.value = clientRes.data ? mapCliente(clientRes.data as Cliente) : null;
     facturas.value = facturasRes.data ?? [];
     proyectos.value = proyectosRes.data ?? [];
@@ -161,7 +162,7 @@ export function useClientProfile(clientId: string) {
     documentos.value = (docsRes.data ?? []) as Documento[];
     usuarios.value = (usersRes.data ?? []) as UsuarioPerfil[];
   })
-  .catch(console.error)
+  .catch(err => console.error('[useClientProfile] Catch error:', err))
   .finally(() => { loading.value = false; });
 
   const saveProfile = async (updates: Partial<{ name: string; contact: string; industry: string; logo: string; status: string; cif: string; direccionFacturacion: string }>) => {
@@ -174,13 +175,14 @@ export function useClientProfile(clientId: string) {
     if ('cif' in updates)                  dbUpdates.cif                   = updates.cif;
     if ('direccionFacturacion' in updates) dbUpdates.direccion_facturacion = updates.direccionFacturacion;
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('clientes')
       .update(dbUpdates)
       .eq('id', clientId)
       .select()
       .single();
 
+    if (error) throw error;
     if (data) clientData.value = { ...clientData.value!, ...mapCliente(data as Cliente) };
   };
 

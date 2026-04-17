@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { generateInformeConIA, fileToAIImage, type AIImageInput } from '../services/aiReport';
-import { guardarInforme, descargarReportePDF, listarInformes, eliminarInforme, NAS_FILE_ICONS, detectarTipoArchivo, type InformeProyecto, type ArchivoNAS, type ImagenAdjunta, type InformeGuardado } from '../services/reportes';
+import { guardarInforme, descargarReportePDF, NAS_FILE_ICONS, detectarTipoArchivo, type InformeProyecto, type ArchivoNAS, type ImagenAdjunta, type InformeGuardado } from '../services/reportes';
 
 const props = defineProps<{
   clienteNombre: string;
@@ -10,6 +10,8 @@ const props = defineProps<{
   clienteCif?: string;
   proyectoNombre?: string;
 }>();
+
+const emit = defineEmits(['generado']);
 
 // ── Estado general ─────────────────────────────────────────────────────────────
 type Mode = 'ai' | 'result';
@@ -74,20 +76,9 @@ const informesGuardados = ref<InformeGuardado[]>([]);
 const cargandoHistorico = ref(true);
 
 onMounted(async () => {
-  try {
-    informesGuardados.value = await listarInformes(props.clienteId);
-  } catch { /* tabla puede no existir aún */ }
+  // Ya no cargamos aquí, el padre gestiona la lista
   cargandoHistorico.value = false;
 });
-
-const borrarInforme = async (inf: InformeGuardado) => {
-  if (!confirm(`¿Eliminar el informe "${inf.titulo}"?`)) return;
-  await eliminarInforme(inf);
-  informesGuardados.value = informesGuardados.value.filter(i => i.id !== inf.id);
-};
-
-const formatFecha = (iso: string) =>
-  new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 // ── Generar PDF (guardar en Supabase + descargar) ────────────────────────────
 const descargarPDF = async () => {
@@ -107,8 +98,10 @@ const descargarPDF = async () => {
     try {
       const guardado = await guardarInforme(informeCompleto, props.clienteId);
       informesGuardados.value = [guardado, ...informesGuardados.value];
-    } catch {
-      console.warn('[Informe] No se pudo guardar en BD, descargando directamente');
+      emit('generado', guardado); // Avisar al padre
+    } catch (err: any) {
+      console.error('[Informe] Error crítico:', err);
+      alert('Error al guardar el informe en la plataforma: ' + err.message + '. El PDF se descargará de todas formas.');
       await descargarReportePDF(informeCompleto);
     }
   } finally {
@@ -379,31 +372,7 @@ const estadoColor: Record<string, string> = {
       </div>
     </div>
 
-    <!-- ══════════════════════════════════════════════════════════ -->
-    <!-- HISTÓRICO DE INFORMES GUARDADOS                           -->
-    <!-- ══════════════════════════════════════════════════════════ -->
-    <div v-if="informesGuardados.length > 0" class="rg-historico">
-      <div class="rg-historico-header">
-        <span class="rg-historico-icon">📂</span>
-        <div>
-          <strong>Informes generados anteriormente</strong>
-          <span>{{ informesGuardados.length }} informe(s) guardado(s)</span>
-        </div>
-      </div>
-      <div class="rg-historico-list">
-        <div v-for="inf in informesGuardados" :key="inf.id" class="rg-historico-item">
-          <div class="rg-historico-info">
-            <strong>{{ inf.titulo }}</strong>
-            <span>{{ inf.proyecto }} · {{ inf.periodo || 'Sin período' }}</span>
-            <small>{{ formatFecha(inf.creado_en) }}</small>
-          </div>
-          <div class="rg-historico-actions">
-            <a :href="inf.url_pdf" target="_blank" class="rg-btn-pdf rg-btn-pdf--small">📄 Ver PDF</a>
-            <button class="rg-btn-delete" @click="borrarInforme(inf)" title="Eliminar">🗑️</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- El histórico ahora se muestra en el perfil del cliente (AdminView) para mayor visibilidad -->
   </div>
 </template>
 

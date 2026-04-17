@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import DashboardCard from '../components/DashboardCard.vue';
 import { authStore } from '../store/auth';
 import { useClientProfile } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
+import { listarInformes, type InformeGuardado } from '../services/reportes';
 
 const clientId = authStore.user?.clientId ?? '';
 const {
@@ -71,6 +72,36 @@ const handleFileChange = async (e: Event) => {
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('es', { day: '2-digit', month: 'short', year: '2-digit' });
+
+const formatDateLong = (iso: string) =>
+  new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
+
+// ── Informes del cliente ───────────────────────────────────────────────────────
+const informes = ref<InformeGuardado[]>([]);
+const cargandoInformes = ref(true);
+
+onMounted(async () => {
+  if (clientId) {
+    try {
+      informes.value = await listarInformes(clientId);
+    } catch { /* tabla puede no existir */ }
+  }
+  cargandoInformes.value = false;
+});
+
+// ── Visualizar informe detallado ───────────────────────────────────────────────
+const selectedInforme = ref<InformeGuardado | null>(null);
+
+const abrirInforme = (inf: InformeGuardado) => {
+  selectedInforme.value = inf;
+};
+
+const totalHoras = (inf: InformeGuardado) =>
+  (inf.contenido?.tareas ?? []).reduce((s, t) => s + (t.horas ?? 0), 0);
+
+const estadoColor: Record<string, string> = {
+  'Completada': '#4ade80', 'En progreso': '#ffa500', 'Pendiente': '#888',
+};
 </script>
 
 <template>
@@ -194,7 +225,114 @@ const formatDate = (iso: string) =>
           </DashboardCard>
         </div>
       </div>
+
+      <!-- Informes de trabajo -->
+      <div v-if="!cargandoInformes && informes.length > 0" class="informes-section">
+        <h3 class="section-title">📊 Informes de Trabajo</h3>
+        <div class="informes-grid">
+          <div v-for="inf in informes" :key="inf.id" class="informe-card">
+            <div class="informe-icon">📄</div>
+            <div class="informe-body">
+              <strong class="informe-titulo">{{ inf.titulo }}</strong>
+              <div class="informe-meta">
+                <span>{{ inf.proyecto }}</span>
+                <span v-if="inf.periodo"> · {{ inf.periodo }}</span>
+              </div>
+              <small class="informe-fecha">{{ formatDateLong(inf.creado_en) }}</small>
+            </div>
+            <div class="informe-actions">
+              <button @click="abrirInforme(inf)" class="btn-text">👁️ Ver Informe</button>
+              <a :href="inf.url_pdf" target="_blank" class="btn-download">
+                ⬇️ PDF
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
     </template>
+
+    <!-- Modal: Detalle del Informe -->
+    <div v-if="selectedInforme" class="modal-overlay report-detail-overlay" @click.self="selectedInforme = null">
+      <div class="modal-box report-modal">
+        <div class="report-modal-header">
+          <div class="report-modal-title">
+            <h2>{{ selectedInforme.titulo }}</h2>
+            <p>{{ selectedInforme.proyecto }} · {{ selectedInforme.periodo || 'General' }}</p>
+          </div>
+          <button class="btn-close" @click="selectedInforme = null">✕</button>
+        </div>
+
+        <div class="report-modal-content scrollable">
+          <div class="rg-preview-titulo">{{ selectedInforme.contenido?.tituloInforme || selectedInforme.titulo }}</div>
+
+          <div class="report-section" v-if="selectedInforme.contenido?.descripcionGeneral">
+            <label>DESCRIPCIÓN DEL PROYECTO</label>
+            <p>{{ selectedInforme.contenido.descripcionGeneral }}</p>
+          </div>
+
+          <div class="report-section" v-if="selectedInforme.contenido?.objetivos?.length">
+            <label>OBJETIVOS</label>
+            <ul class="client-steps-dots">
+              <li v-for="o in selectedInforme.contenido.objetivos" :key="o">{{ o }}</li>
+            </ul>
+          </div>
+
+          <div class="report-section" v-if="selectedInforme.contenido?.resumenEjecutivo">
+            <label>RESUMEN EJECUTIVO</label>
+            <p class="resumen-text-box">{{ selectedInforme.contenido.resumenEjecutivo }}</p>
+          </div>
+
+          <div class="report-section" v-if="selectedInforme.contenido?.kpis?.length">
+            <label>RESULTADOS Y MÉTRICAS</label>
+            <div class="client-kpi-grid">
+              <div v-for="k in selectedInforme.contenido.kpis" :key="k.label" class="client-kpi-card">
+                <span class="client-kpi-val">{{ k.value }}</span>
+                <span class="client-kpi-label">{{ k.label }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="report-section" v-if="selectedInforme.contenido?.tareas?.length">
+            <label>TRABAJOS REALIZADOS ({{ totalHoras(selectedInforme) }}h totales)</label>
+            <div class="client-tareas-list">
+              <div v-for="t in selectedInforme.contenido.tareas" :key="t.titulo" class="client-tarea-item">
+                <div class="client-tarea-dot" :style="{ background: estadoColor[t.estado || 'Completada'] }"></div>
+                <div class="client-tarea-text">
+                  <strong>{{ t.titulo }}</strong>
+                  <p>{{ t.descripcion }}</p>
+                </div>
+                <div class="client-tarea-hours" v-if="t.horas">{{ t.horas }}h</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="report-section" v-if="selectedInforme.contenido?.imagenesAdjuntas?.length">
+            <label>MATERIAL VISUAL ({{ selectedInforme.contenido.imagenesAdjuntas.length }} imágenes)</label>
+            <div class="client-gallery">
+              <img v-for="img in selectedInforme.contenido.imagenesAdjuntas" :key="img.nombre" :src="img.base64" :alt="img.nombre" />
+            </div>
+          </div>
+
+          <div class="report-double-grid">
+            <div class="report-section" v-if="selectedInforme.contenido?.conclusiones">
+              <label>CONCLUSIONES</label>
+              <p>{{ selectedInforme.contenido.conclusiones }}</p>
+            </div>
+            <div class="report-section" v-if="selectedInforme.contenido?.proximosPasos?.length">
+              <label>PRÓXIMOS PASOS</label>
+              <ol class="client-steps-ordered">
+                <li v-for="step in selectedInforme.contenido.proximosPasos" :key="step">{{ step }}</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <a :href="selectedInforme.url_pdf" target="_blank" class="btn-primary">📄 Descargar PDF</a>
+          <button class="btn-text" @click="selectedInforme = null">Cerrar</button>
+        </div>
+      </div>
+    </div>
 
     <div v-else class="loading-state">No se encontró tu perfil. Contacta con la agencia.</div>
 
@@ -300,4 +438,78 @@ const formatDate = (iso: string) =>
 .btn-text { background: transparent; border: none; color: var(--color-primary); cursor: pointer; font-size: 0.9rem; }
 .btn-primary { background: var(--color-primary); color: #000; font-weight: 700; padding: 0.6rem 1.4rem; border-radius: 6px; border: none; cursor: pointer; }
 .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Informes */
+.informes-section { margin-top: 0.5rem; }
+.informes-grid { display: flex; flex-direction: column; gap: 0.75rem; }
+.informe-card {
+  display: flex; align-items: center; gap: 1rem; padding: 1.25rem;
+  background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 12px;
+  transition: border-color 0.2s, transform 0.15s;
+}
+.informe-card:hover { border-color: var(--color-primary); transform: translateY(-2px); }
+.informe-icon { font-size: 2rem; flex-shrink: 0; }
+.informe-body { flex: 1; display: flex; flex-direction: column; gap: 0.15rem; overflow: hidden; }
+.informe-titulo { font-size: 1rem; color: var(--color-text-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.informe-meta { font-size: 0.82rem; color: var(--color-text-muted); }
+.informe-fecha { font-size: 0.75rem; color: rgba(255,255,255,0.3); }
+.btn-download {
+  background: var(--color-primary); color: #000; font-weight: 700;
+  padding: 0.55rem 1.1rem; border-radius: 8px; text-decoration: none;
+  font-size: 0.85rem; white-space: nowrap; flex-shrink: 0;
+  transition: all 0.15s;
+}
+.btn-download:hover { background: #d4ed00; transform: scale(1.03); }
+
+@media (max-width: 600px) {
+  .informe-card { flex-direction: column; align-items: flex-start; }
+  .btn-download { width: 100%; text-align: center; }
+}
+
+/* Report Detail Modal Styles */
+.report-modal { max-width: 900px !important; width: 95% !important; max-height: 90vh !important; display: flex; flex-direction: column; padding: 0 !important; background: #000 !important; color: #fff !important; }
+.report-modal-header { padding: 1.5rem 2rem; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: flex-start; background: #000; border-radius: 12px 12px 0 0; }
+.report-modal-title h2 { margin: 0; font-size: 1.4rem; color: var(--color-primary); }
+.report-modal-title p { margin: 0.25rem 0 0; font-size: 0.85rem; color: #888; }
+.report-modal-content { padding: 2.5rem; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 2.5rem; background: #000; }
+
+.rg-preview-titulo { font-size: 1.8rem; font-weight: 800; color: var(--color-primary); border-bottom: 2px solid var(--color-primary); padding-bottom: 0.5rem; margin-top: -1rem; }
+
+.report-section { display: flex; flex-direction: column; gap: 0.75rem; text-align: left; }
+.report-section label { font-size: 0.75rem; font-weight: 800; color: #aaa; letter-spacing: 0.1em; text-transform: uppercase; }
+.report-section p { margin: 0; line-height: 1.6; color: #eee; font-size: 1rem; white-space: pre-line; }
+.resumen-text-box { border-left: 3px solid var(--color-primary); padding: 1.25rem !important; background: rgba(227,255,4,0.03); border-radius: 4px; }
+
+.client-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1.25rem; }
+.client-kpi-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 1.25rem; border-radius: 12px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.client-kpi-val { font-size: 1.8rem; font-weight: 800; color: var(--color-primary); }
+.client-kpi-label { font-size: 0.75rem; color: #888; text-transform: uppercase; margin-top: 0.35rem; }
+
+.client-tareas-list { display: flex; flex-direction: column; gap: 0.85rem; }
+.client-tarea-item { display: flex; align-items: center; gap: 1rem; padding: 1.15rem; background: rgba(255,255,255,0.02); border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); }
+.client-tarea-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.client-tarea-text { flex: 1; text-align: left; }
+.client-tarea-text strong { display: block; font-size: 1rem; margin-bottom: 0.2rem; color: #fff; }
+.client-tarea-text p { font-size: 0.9rem !important; color: #888 !important; margin: 0 !important; }
+.client-tarea-hours { font-size: 0.9rem; font-weight: 700; color: var(--color-primary); padding: 0.25rem 0.5rem; background: rgba(227,255,4,0.1); border-radius: 4px; }
+
+.client-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem; }
+.client-gallery img { width: 100%; height: 100px; object-fit: cover; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); }
+
+.report-double-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem; }
+.client-steps-dots { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.client-steps-dots li { font-size: 0.95rem; color: #ccc; display: flex; align-items: flex-start; gap: 0.75rem; }
+.client-steps-dots li::before { content: "•"; color: var(--color-primary); font-weight: bold; }
+
+.client-steps-ordered { counter-reset: my-counter; list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.client-steps-ordered li { counter-increment: my-counter; font-size: 0.95rem; color: #ccc; display: flex; align-items: flex-start; gap: 0.85rem; }
+.client-steps-ordered li::before { content: counter(my-counter); width: 22px; height: 22px; background: var(--color-primary); color: #000; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.75rem; flex-shrink: 0; }
+
+.informe-actions { display: flex; align-items: center; gap: 1rem; }
+.informe-actions .btn-text { font-weight: 700; font-size: 0.85rem; color: var(--color-primary); }
+
+@media (max-width: 800px) {
+  .report-double-grid { grid-template-columns: 1fr; }
+  .report-modal-content { padding: 1.5rem; gap: 1.75rem; }
+}
 </style>

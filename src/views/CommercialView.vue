@@ -44,6 +44,9 @@ const saveLead = async () => {
       leads.value.unshift(created);
     }
     showModal.value = false;
+  } catch (error: any) {
+    console.error('[saveLead] Error al guardar:', error);
+    alert('Error al guardar: ' + (error.message || 'No se pudo completar la operación'));
   } finally {
     saving.value = false;
   }

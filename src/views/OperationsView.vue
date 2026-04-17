@@ -52,21 +52,36 @@ const saveProyecto = async () => {
       proyectos.value.unshift(created);
     }
     showProyModal.value = false;
-  } finally { saving.value = false; }
+  } catch (error: any) {
+    console.error('[saveProyecto] Error:', error);
+    alert('Error al guardar el proyecto: ' + (error.message || 'Error desconocido'));
+  } finally {
+    saving.value = false;
+  }
 };
 
 const removeProyecto = async (p: Proyecto) => {
   if (!confirm(`¿Eliminar "${p.nombre}"?`)) return;
-  await deleteProyecto(p.id);
-  proyectos.value = proyectos.value.filter(x => x.id !== p.id);
+  try {
+    await deleteProyecto(p.id);
+    proyectos.value = proyectos.value.filter(x => x.id !== p.id);
+  } catch (error: any) {
+    console.error('[removeProyecto] Error:', error);
+    alert('Error al eliminar el proyecto: ' + (error.message || 'Error desconocido'));
+  }
 };
 
 const changeEstado = async (p: Proyecto, estado: string) => {
-  const updates: Partial<Proyecto> = { estado: estado as Proyecto['estado'] };
-  if (estado === 'Completado') updates.fecha_entrega_real = new Date().toISOString().split('T')[0];
-  const updated = await updateProyecto(p.id, updates);
-  const idx = proyectos.value.findIndex(x => x.id === p.id);
-  if (idx !== -1) proyectos.value[idx] = updated;
+  try {
+    const updates: Partial<Proyecto> = { estado: estado as Proyecto['estado'] };
+    if (estado === 'Completado') updates.fecha_entrega_real = new Date().toISOString().split('T')[0];
+    const updated = await updateProyecto(p.id, updates);
+    const idx = proyectos.value.findIndex(x => x.id === p.id);
+    if (idx !== -1) proyectos.value[idx] = updated;
+  } catch (error: any) {
+    console.error('[changeEstado] Error:', error);
+    alert('Error al cambiar el estado del proyecto: ' + (error.message || 'Error desconocido'));
+  }
 };
 
 // ── Editar horas disponibles del usuario ──────────────────────────────────────
@@ -89,7 +104,12 @@ const saveUsuario = async () => {
     const idx = equipo.value.findIndex(m => m.id === editingUsuarioId.value);
     if (idx !== -1) equipo.value[idx] = updated;
     showUsuarioModal.value = false;
-  } finally { savingUsuario.value = false; }
+  } catch (error: any) {
+    console.error('[saveUsuario] Error:', error);
+    alert('Error al actualizar el usuario: ' + (error.message || 'Error desconocido'));
+  } finally {
+    savingUsuario.value = false;
+  }
 };
 
 const formatDate = (d?: string | null) => d
@@ -184,13 +204,23 @@ const saveTarea = async () => {
       tareas.value.unshift(created);
     }
     showTareaModal.value = false;
-  } finally { savingTarea.value = false; }
+  } catch (error: any) {
+    console.error('[saveTarea] Error:', error);
+    alert('Error al guardar la tarea: ' + (error.message || 'Error desconocido'));
+  } finally {
+    savingTarea.value = false;
+  }
 };
 
 const removeTarea = async (t: Tarea) => {
   if (!confirm(`¿Eliminar "${t.titulo}"?`)) return;
-  await deleteTarea(t.id);
-  tareas.value = tareas.value.filter(x => x.id !== t.id);
+  try {
+    await deleteTarea(t.id);
+    tareas.value = tareas.value.filter(x => x.id !== t.id);
+  } catch (error: any) {
+    console.error('[removeTarea] Error:', error);
+    alert('Error al eliminar la tarea: ' + (error.message || 'Error desconocido'));
+  }
 };
 
 const resolveProyecto = (id?: string | null) => {
