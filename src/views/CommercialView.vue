@@ -127,10 +127,19 @@ const changeEstado = async (lead: Lead, estado: string) => {
 };
 
 // ── Filtros ──────────────────────────────────────────────────────────────────
-const filtroEstado = ref('');
+const filtroEstado  = ref('');
+const searchLeads   = ref('');
 const filteredLeads = computed(() => {
-  if (!filtroEstado.value) return leads.value;
-  return leads.value.filter(l => l.estado === filtroEstado.value);
+  const q = searchLeads.value.trim().toLowerCase();
+  return leads.value.filter(l => {
+    const matchEstado = !filtroEstado.value || l.estado === filtroEstado.value;
+    const matchSearch = !q ||
+      (l.nombre  ?? '').toLowerCase().includes(q) ||
+      (l.empresa ?? '').toLowerCase().includes(q) ||
+      (l.servicio ?? '').toLowerCase().includes(q) ||
+      (l.email   ?? '').toLowerCase().includes(q);
+    return matchEstado && matchSearch;
+  });
 });
 
 const formatDate = (iso: string) =>
@@ -197,6 +206,7 @@ const formatDate = (iso: string) =>
       <DashboardCard title="Leads">
         <template #actions>
           <div class="table-controls">
+            <input v-model="searchLeads" type="text" placeholder="Buscar nombre, empresa…" class="search-input-sm" />
             <select v-model="filtroEstado" class="filter-select">
               <option value="">Todos los estados</option>
               <option v-for="s in PIPELINE_STAGES" :key="s" :value="s">{{ s }}</option>
@@ -357,7 +367,9 @@ const formatDate = (iso: string) =>
 .progress-bar { width: 100%; height: 6px; background-color: var(--color-bg-lighter); border-radius: 3px; overflow: hidden; }
 .fill { height: 100%; background-color: var(--color-primary); }
 
-.table-controls { display: flex; gap: 0.75rem; align-items: center; }
+.table-controls { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+.search-input-sm { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.3rem 0.7rem; border-radius: 4px; font-size: 0.85rem; outline: none; color-scheme: dark; min-width: 180px; }
+.search-input-sm:focus { border-color: var(--color-primary); }
 .filter-select { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.85rem; outline: none; color-scheme: dark; }
 .btn-primary-sm { background: var(--color-primary); color: #000; font-weight: 700; font-size: 0.85rem; padding: 0.35rem 0.9rem; border: none; border-radius: 4px; cursor: pointer; }
 

@@ -1,14 +1,29 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import DashboardCard from '../components/DashboardCard.vue';
 import { useAlertas, type Alerta } from '../services/alerts';
 
 const router = useRouter();
-const { alertas, loading } = useAlertas();
+const { alertas, loading, lastUpdated, reload } = useAlertas();
 
 const altas  = computed(() => alertas.value.filter(a => a.severidad === 'alta'));
 const medias = computed(() => alertas.value.filter(a => a.severidad === 'media'));
+
+const lastUpdatedText = computed(() => {
+  if (!lastUpdated.value) return '';
+  return lastUpdated.value.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+});
+
+let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+onMounted(() => {
+  pollInterval = setInterval(reload, 30_000);
+});
+
+onUnmounted(() => {
+  if (pollInterval) clearInterval(pollInterval);
+});
 
 const tipoConfig: Record<Alerta['tipo'], { label: string; icon: string; color: string }> = {
   financiero:      { label: 'Financiero',      icon: '💰', color: '#ff4444' },
@@ -35,15 +50,23 @@ const resumen = computed(() => {
 <template>
   <div class="view-container">
     <div class="header">
-      <h1>Centro de Alertas</h1>
-      <span class="subtitle">
-        <span v-if="!loading">
-          <strong :class="altas.length > 0 ? 'text-danger' : 'text-ok'">
-            {{ altas.length }} crítica(s)
-          </strong>
-          · {{ medias.length }} aviso(s) · {{ alertas.length }} total
+      <div>
+        <h1>Centro de Alertas</h1>
+        <span class="subtitle">
+          <span v-if="!loading">
+            <strong :class="altas.length > 0 ? 'text-danger' : 'text-ok'">
+              {{ altas.length }} crítica(s)
+            </strong>
+            · {{ medias.length }} aviso(s) · {{ alertas.length }} total
+          </span>
         </span>
-      </span>
+      </div>
+      <div class="header-right">
+        <span v-if="lastUpdatedText" class="last-updated">Actualizado: {{ lastUpdatedText }}</span>
+        <button class="btn-refresh" :class="{ spinning: loading }" @click="reload" :disabled="loading" title="Actualizar ahora">
+          ↻
+        </button>
+      </div>
     </div>
 
     <!-- Resumen por categoría -->
@@ -110,10 +133,28 @@ const resumen = computed(() => {
 
 <style scoped>
 .view-container { display: flex; flex-direction: column; gap: 2rem; }
+.header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
 .header h1 { font-size: 2rem; margin-bottom: 0.5rem; }
 .subtitle { color: var(--color-text-muted); font-size: 1.1rem; }
 .text-danger { color: #ff4444; }
 .text-ok { color: #4ade80; }
+.header-right { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; padding-top: 0.25rem; }
+.last-updated { font-size: 0.75rem; color: var(--color-text-muted); }
+.btn-refresh {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, transform 0.3s;
+  display: flex; align-items: center; justify-content: center;
+}
+.btn-refresh:hover:not(:disabled) { color: var(--color-primary); border-color: var(--color-primary); }
+.btn-refresh.spinning { animation: spin 0.8s linear infinite; }
+.btn-refresh:disabled { opacity: 0.4; cursor: default; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .loading-state { color: var(--color-text-muted); font-style: italic; padding: 2rem; text-align: center; }
 
 /* Resumen */

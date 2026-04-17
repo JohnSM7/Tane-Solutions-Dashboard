@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
 import Sidebar from './components/layout/Sidebar.vue';
+import ToastNotification from './components/ToastNotification.vue';
 import { authStore } from './store/auth';
 
 const route = useRoute();
@@ -20,6 +21,7 @@ const showSidebar = computed(() => {
     <main class="main-content" :style="!showSidebar ? 'padding: 0;' : ''">
       <RouterView />
     </main>
+    <ToastNotification />
   </div>
 </template>
 
