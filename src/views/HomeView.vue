@@ -6,7 +6,9 @@ import { useHomeData } from '../services/home';
 import { authStore } from '../store/auth';
 
 const router = useRouter();
-const { kpis, loading } = useHomeData();
+const { kpis, activity, loading } = useHomeData();
+
+const TIPO_ICON: Record<string, string> = { ticket: '🎫', lead: '💼', factura: '🧾' };
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n) + ' €';
@@ -119,7 +121,40 @@ const modules = [
             </span>
           </div>
         </DashboardCard>
+        <DashboardCard>
+          <div class="kpi">
+            <span class="kpi-label">Tareas pendientes</span>
+            <span class="kpi-value" :style="{ color: kpis.tareasPendientes > 0 ? '#ffa500' : '#4ade80' }">
+              {{ kpis.tareasPendientes }}
+            </span>
+            <button class="kpi-link" @click="router.push('/tareas')">Ver tablero →</button>
+          </div>
+        </DashboardCard>
       </div>
+
+      <!-- Actividad reciente + acceso a módulos -->
+      <div class="bottom-grid">
+
+      <DashboardCard title="Actividad reciente">
+        <div v-if="activity.length === 0" class="empty-state">Sin actividad reciente</div>
+        <div v-else class="activity-feed">
+          <div
+            v-for="item in activity"
+            :key="item.id"
+            class="activity-row"
+            @click="router.push(item.link)"
+          >
+            <span class="activity-icon">{{ TIPO_ICON[item.tipo] }}</span>
+            <div class="activity-body">
+              <span class="activity-title">{{ item.titulo }}</span>
+              <span class="activity-sub">{{ item.subtitulo }}</span>
+            </div>
+            <span class="activity-badge" :style="{ color: item.color, borderColor: item.color + '55' }">
+              {{ item.estado }}
+            </span>
+          </div>
+        </div>
+      </DashboardCard>
 
       <!-- Acceso rápido a módulos -->
       <DashboardCard title="Módulos">
@@ -139,6 +174,8 @@ const modules = [
           </div>
         </div>
       </DashboardCard>
+
+      </div><!-- end bottom-grid -->
 
     </template>
   </div>
@@ -181,6 +218,38 @@ const modules = [
 .mini-bar-bg { height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 6px; }
 .mini-bar    { height: 4px; border-radius: 2px; transition: width 0.4s; }
 
+.kpi-link {
+  background: none; border: none; color: var(--color-primary); font-size: 0.78rem;
+  font-weight: 600; cursor: pointer; padding: 0; margin-top: 2px; text-align: left;
+}
+.kpi-link:hover { text-decoration: underline; }
+
+.bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.activity-feed { display: flex; flex-direction: column; gap: 0; }
+.activity-row {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.75rem 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer; border-radius: 4px;
+  transition: background 0.15s;
+}
+.activity-row:last-child { border-bottom: none; }
+.activity-row:hover { background: rgba(255,255,255,0.04); }
+.activity-icon { font-size: 1.1rem; flex-shrink: 0; }
+.activity-body { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.activity-title { font-size: 0.88rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.activity-sub   { font-size: 0.75rem; color: var(--color-text-muted); }
+.activity-badge {
+  font-size: 0.72rem; font-weight: 600; padding: 2px 8px;
+  border-radius: 10px; border: 1px solid; white-space: nowrap; flex-shrink: 0;
+}
+.empty-state { color: var(--color-text-muted); font-size: 0.88rem; padding: 1rem 0.5rem; }
+
 /* Modules */
 .modules-grid { display: flex; flex-direction: column; gap: 0; }
 .module-card {
@@ -204,5 +273,6 @@ const modules = [
 @media (max-width: 768px) {
   .kpi-grid { grid-template-columns: 1fr 1fr; }
   .kpi-value { font-size: 1.4rem; }
+  .bottom-grid { grid-template-columns: 1fr; }
 }
 </style>

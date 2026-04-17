@@ -7,7 +7,7 @@ import { useClientProfile } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
 import { listarInformes, type InformeGuardado } from '../services/reportes';
 import { generateInvoicePDF, type Factura } from '../services/financial';
-import { createTicket } from '../services/support';
+import { createTicket, useClientTickets } from '../services/support';
 import { useToast } from '../composables/useToast';
 
 const clientId = authStore.user?.clientId ?? '';
@@ -18,6 +18,18 @@ const {
 } = useClientProfile(clientId);
 
 const toast = useToast();
+
+const { tickets: misTickets } = useClientTickets(clientId);
+
+const PROGRESO_ESTADO: Record<string, number> = {
+  'Planificado': 5, 'En curso': 50, 'En riesgo': 40,
+  'Retrasado': 30, 'Bloqueado': 20, 'Completado': 100,
+};
+const progresoProyecto = (estado: string) => PROGRESO_ESTADO[estado] ?? 50;
+
+const TICKET_COLOR: Record<string, string> = {
+  'Abierto': '#ffa500', 'En proceso': '#e3ff04', 'Cerrado': '#4ade80',
+};
 
 const selectedSedeId = ref<number | 'all'>('all');
 
@@ -255,15 +267,18 @@ const estadoColor: Record<string, string> = {
         <DashboardCard title="Proyectos en Curso">
           <div v-if="filteredProyectos.length === 0" class="empty-state">Sin proyectos activos para esta sede</div>
           <ul v-else class="activity-list">
-            <li v-for="p in filteredProyectos" :key="p.id">
+            <li v-for="p in filteredProyectos" :key="p.id" class="proyecto-item">
               <div class="act-dot" :style="{ backgroundColor: ESTADO_COLORS[p.estado] }"></div>
               <div class="act-text">
                 <strong>{{ p.nombre }}</strong>
                 <span>{{ p.fase || p.estado }}</span>
+                <div class="progress-bar-wrap">
+                  <div class="progress-bar-fill"
+                    :style="{ width: progresoProyecto(p.estado) + '%', background: ESTADO_COLORS[p.estado] }">
+                  </div>
+                </div>
               </div>
-              <span class="status-pill" :style="{ color: ESTADO_COLORS[p.estado], borderColor: ESTADO_COLORS[p.estado] }">
-                {{ p.estado }}
-              </span>
+              <span class="progress-pct">{{ progresoProyecto(p.estado) }}%</span>
             </li>
           </ul>
         </DashboardCard>
@@ -304,6 +319,25 @@ const estadoColor: Record<string, string> = {
         :proyectos="proyectos"
         :is-admin="false"
       />
+
+      <!-- Mis Tickets de Soporte -->
+      <DashboardCard title="Mis Solicitudes de Soporte">
+        <template #actions>
+          <button class="btn-sm btn-soporte" @click="openTicketModal">+ Nueva solicitud</button>
+        </template>
+        <div v-if="misTickets.length === 0" class="empty-state-small">No tienes solicitudes de soporte abiertas.</div>
+        <ul v-else class="tickets-list">
+          <li v-for="t in misTickets" :key="t.id" class="ticket-row">
+            <div class="ticket-info">
+              <span class="ticket-asunto">{{ t.asunto }}</span>
+              <span class="ticket-fecha">{{ formatDate(t.fecha_creacion) }}</span>
+            </div>
+            <span class="ticket-badge" :style="{ color: TICKET_COLOR[t.estado], borderColor: TICKET_COLOR[t.estado] + '55' }">
+              {{ t.estado }}
+            </span>
+          </li>
+        </ul>
+      </DashboardCard>
 
       <!-- Google My Business -->
       <div v-if="filteredSedes.length > 0">
@@ -583,11 +617,23 @@ const estadoColor: Record<string, string> = {
 }
 
 .activity-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
-.activity-list li { display: flex; gap: 0.75rem; align-items: center; padding: 0.75rem; background: rgba(255,255,255,0.02); border-radius: 8px; }
-.act-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.act-text { display: flex; flex-direction: column; flex: 1; }
+.activity-list li { display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.75rem; background: rgba(255,255,255,0.02); border-radius: 8px; }
+.act-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+.act-text { display: flex; flex-direction: column; flex: 1; gap: 0.25rem; }
 .act-text strong { font-size: 0.95rem; }
 .act-text span { font-size: 0.8rem; color: var(--color-text-muted); }
+.progress-bar-wrap { height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.progress-bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
+.progress-pct { font-size: 0.78rem; color: var(--color-text-muted); font-weight: 600; white-space: nowrap; flex-shrink: 0; margin-top: 2px; }
+
+.tickets-list { list-style: none; padding: 0; display: flex; flex-direction: column; }
+.ticket-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 0.5rem; border-bottom: 1px solid var(--color-border); }
+.ticket-row:last-child { border-bottom: none; }
+.ticket-info { display: flex; flex-direction: column; flex: 1; gap: 0.15rem; }
+.ticket-asunto { font-size: 0.9rem; font-weight: 600; }
+.ticket-fecha  { font-size: 0.75rem; color: var(--color-text-muted); }
+.ticket-badge  { font-size: 0.72rem; font-weight: 600; padding: 2px 10px; border-radius: 10px; border: 1px solid; white-space: nowrap; flex-shrink: 0; }
+.empty-state-small { color: var(--color-text-muted); font-size: 0.85rem; padding: 0.5rem 0; }
 .status-pill { font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 10px; border: 1px solid; flex-shrink: 0; }
 
 .upload-area { border: 2px dashed rgba(227,255,4,0.4); padding: 1.5rem; text-align: center; border-radius: 8px; margin-bottom: 1rem; cursor: pointer; transition: all 0.2s; background: rgba(227,255,4,0.02); }

@@ -1,17 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import HomeView from '../views/HomeView.vue';
-import CommercialView from '../views/CommercialView.vue';
-import FinancialView from '../views/FinancialView.vue';
-import OperationsView from '../views/OperationsView.vue';
-import SupportView from '../views/SupportView.vue';
-import AdminClientsView from '../views/AdminClientsView.vue';
-import AdminClientProfileView from '../views/AdminClientProfileView.vue';
-import ClientPortalView from '../views/ClientPortalView.vue';
-import LoginView from '../views/LoginView.vue';
-import LoginClienteView from '../views/LoginClienteView.vue';
-import UpdatePasswordView from '../views/UpdatePasswordView.vue';
-import AlertasView from '../views/AlertasView.vue';
-import AdminUsuariosView from '../views/AdminUsuariosView.vue';
 import { authStore } from '../store/auth';
 import { isClientDomain, loginRoute } from '../utils/domain';
 
@@ -22,19 +9,19 @@ const router = createRouter({
         {
             path: '/login',
             name: 'login',
-            component: LoginView,
+            component: () => import('../views/LoginView.vue'),
             meta: { requiresGuest: true }
         },
         {
             path: '/login-cliente',
             name: 'loginCliente',
-            component: LoginClienteView,
+            component: () => import('../views/LoginClienteView.vue'),
             meta: { requiresGuest: true }
         },
         {
             path: '/update-password',
             name: 'updatePassword',
-            component: UpdatePasswordView,
+            component: () => import('../views/UpdatePasswordView.vue'),
             meta: { requiresAuth: false }
         },
         {
@@ -48,62 +35,68 @@ const router = createRouter({
         {
             path: '/dashboard',
             name: 'dashboard',
-            component: HomeView,
+            component: () => import('../views/HomeView.vue'),
             meta: { requiresAuth: true, roles: ['ADMIN'] }
         },
         {
             path: '/alerts',
             name: 'alerts',
-            component: AlertasView,
+            component: () => import('../views/AlertasView.vue'),
             meta: { requiresAuth: true, roles: ['ADMIN'] }
         },
         {
             path: '/commercial',
             name: 'commercial',
-            component: CommercialView,
+            component: () => import('../views/CommercialView.vue'),
             meta: { requiresAuth: true, roles: ['ADMIN'] }
         },
         {
             path: '/financial',
             name: 'financial',
-            component: FinancialView,
+            component: () => import('../views/FinancialView.vue'),
             meta: { requiresAuth: true, roles: ['ADMIN'] }
         },
         {
             path: '/operations',
             name: 'operations',
-            component: OperationsView,
+            component: () => import('../views/OperationsView.vue'),
             meta: { requiresAuth: true, roles: ['ADMIN'] }
         },
         {
             path: '/support',
             name: 'support',
-            component: SupportView,
+            component: () => import('../views/SupportView.vue'),
             meta: { requiresAuth: true, roles: ['ADMIN'] }
         },
         {
             path: '/clients',
             name: 'clients',
-            component: AdminClientsView,
+            component: () => import('../views/AdminClientsView.vue'),
             meta: { requiresAuth: true, roles: ['ADMIN'] }
         },
         {
             path: '/clients/:id',
             name: 'clientProfile',
-            component: AdminClientProfileView,
+            component: () => import('../views/AdminClientProfileView.vue'),
             meta: { requiresAuth: true, roles: ['ADMIN'] }
         },
         {
             path: '/usuarios',
             name: 'usuarios',
-            component: AdminUsuariosView,
+            component: () => import('../views/AdminUsuariosView.vue'),
+            meta: { requiresAuth: true, roles: ['ADMIN'] }
+        },
+        {
+            path: '/tareas',
+            name: 'tareas',
+            component: () => import('../views/TareasView.vue'),
             meta: { requiresAuth: true, roles: ['ADMIN'] }
         },
         // ── Client routes ─────────────────────────────────────────────────────
         {
             path: '/client-panel',
             name: 'clientPanel',
-            component: ClientPortalView,
+            component: () => import('../views/ClientPortalView.vue'),
             meta: { requiresAuth: true, roles: ['CLIENT'] }
         }
     ]
@@ -114,33 +107,26 @@ router.beforeEach((to, _from, next) => {
     const userRole        = authStore.role;
     const onClientDomain  = isClientDomain();
 
-    // Always allow password recovery
     if (to.name === 'updatePassword') return next();
 
-    // Redirect bare /login to /login-cliente on client domain (and vice-versa)
     if (to.name === 'login' && onClientDomain) return next('/login-cliente');
     if (to.name === 'loginCliente' && !onClientDomain) return next('/login');
 
-    // Guest-only routes (login pages)
     if (to.meta.requiresGuest) {
         if (!isAuthenticated) return next();
-        // Recovery flow: let through
         if (window.location.hash.includes('type=recovery')) return next();
         return next(userRole === 'CLIENT' ? '/client-panel' : '/dashboard');
     }
 
-    // Protected routes
     if (to.meta.requiresAuth) {
         if (!isAuthenticated) return next(loginRoute());
 
-        // Role-based access
         if (to.meta.roles && Array.isArray(to.meta.roles)) {
             if (!(to.meta.roles as string[]).includes(userRole ?? '')) {
                 return next(userRole === 'CLIENT' ? '/client-panel' : '/dashboard');
             }
         }
 
-        // Domain enforcement: block ADMINs from client domain
         if (onClientDomain && userRole === 'ADMIN') {
             return next('/login-cliente?error=rol');
         }

@@ -152,3 +152,20 @@ export async function deleteServidor(id: string): Promise<void> {
   const { error } = await supabase.from('servidores').delete().eq('id', id);
   if (error) throw error;
 }
+
+export function useClientTickets(clientId: string) {
+  const tickets = ref<Ticket[]>([]);
+  const loading = ref(true);
+
+  Promise.resolve(
+    supabase
+      .from('tickets')
+      .select('*')
+      .eq('cliente_id', clientId)
+      .order('fecha_creacion', { ascending: false })
+  ).then(({ data }) => {
+    tickets.value = (data ?? []) as Ticket[];
+  }).finally(() => { loading.value = false; });
+
+  return { tickets, loading };
+}

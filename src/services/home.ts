@@ -12,11 +12,24 @@ export type HomeKpis = {
   ticketsAbiertos:   number;
   teamLoadPct:       number;
   alertasTotal:      number;
+  tareasPendientes:  number;
+};
+
+export type ActivityItem = {
+  id: string;
+  tipo: 'ticket' | 'lead' | 'factura';
+  titulo: string;
+  subtitulo: string;
+  estado: string;
+  color: string;
+  fecha: string;
+  link: string;
 };
 
 export function useHomeData() {
-  const kpis = ref<HomeKpis | null>(null);
-  const loading = ref(true);
+  const kpis     = ref<HomeKpis | null>(null);
+  const activity = ref<ActivityItem[]>([]);
+  const loading  = ref(true);
 
   const now = new Date();
   const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
@@ -41,7 +54,7 @@ export function useHomeData() {
     // 8. Capacidad semanal del equipo admin
     supabase.from('usuarios').select('horas_disponibles_semana').eq('rol', 'ADMIN'),
     // 9. Horas de tareas activas (para calcular carga real)
-    supabase.from('tareas').select('horas_estimadas').neq('estado', 'completado'),
+    supabase.from('tareas').select('horas_estimadas, estado').neq('estado', 'completado'),
     // 10. Alertas (vencidas + proyectos riesgo + GMB + tickets alta + servidores)
     Promise.all([
       supabase.from('facturas').select('id', { count: 'exact', head: true }).eq('estado', 'Vencida'),
@@ -66,9 +79,11 @@ export function useHomeData() {
       ['En riesgo', 'Retrasado', 'Bloqueado'].includes(p.estado)
     ).length;
 
+    const tareasData = (tareasRes as any).data ?? [];
     const totalCap = ((capacidadRes as any).data ?? []).reduce((s: number, u: any) => s + u.horas_disponibles_semana, 0);
-    const totalAsg = ((tareasRes as any).data ?? []).reduce((s: number, t: any) => s + (t.horas_estimadas ?? 0), 0);
+    const totalAsg = tareasData.reduce((s: number, t: any) => s + (t.horas_estimadas ?? 0), 0);
     const teamLoadPct = totalCap > 0 ? Math.round(totalAsg / totalCap * 100) : 0;
+    const tareasPendientes = tareasData.filter((t: any) => t.estado === 'backlog').length;
 
     const [af, ap, ag, at, asv] = alertasGroup as any[];
     const alertasTotal = (af.count ?? 0) + (ap.count ?? 0) + (ag.count ?? 0) + (at.count ?? 0) + (asv.count ?? 0);
@@ -84,10 +99,45 @@ export function useHomeData() {
       ticketsAbiertos:   ticketsRes.count ?? 0,
       teamLoadPct,
       alertasTotal,
+      tareasPendientes,
     };
   })
   .catch(console.error)
   .finally(() => { loading.value = false; });
 
-  return { kpis, loading };
+  // Recent activity (parallel, non-blocking)
+  Promise.all([
+    supabase.from('tickets').select('id, asunto, estado, prioridad, fecha_creacion, clientes(nombre)')
+      .order('fecha_creacion', { ascending: false }).limit(4),
+    supabase.from('leads').select('id, nombre, empresa, estado, created_at')
+      .order('created_at', { ascending: false }).limit(4),
+    supabase.from('facturas').select('id, numero_factura, concepto, estado, importe, fecha_emision')
+      .order('fecha_emision', { ascending: false }).limit(3),
+  ]).then(([ticketsR, leadsR, facturasR]) => {
+    const items: ActivityItem[] = [];
+
+    for (const t of (ticketsR.data ?? []) as any[]) {
+      const color = t.estado === 'Cerrado' ? '#4ade80' : t.prioridad === 'Alta' ? '#ff4444' : '#ffa500';
+      items.push({ id: `t-${t.id}`, tipo: 'ticket', titulo: t.asunto,
+        subtitulo: (t.clientes as any)?.nombre ?? 'Cliente',
+        estado: t.estado, color, fecha: t.fecha_creacion, link: '/support' });
+    }
+    for (const l of (leadsR.data ?? []) as any[]) {
+      const color = l.estado === 'Cerrado-Ganado' ? '#4ade80' : l.estado === 'Cerrado-Perdido' ? '#94a3b8' : '#e3ff04';
+      items.push({ id: `l-${l.id}`, tipo: 'lead', titulo: l.empresa || l.nombre,
+        subtitulo: l.nombre, estado: l.estado, color, fecha: l.created_at, link: '/commercial' });
+    }
+    for (const f of (facturasR.data ?? []) as any[]) {
+      const color = f.estado === 'Pagada' ? '#4ade80' : f.estado === 'Vencida' ? '#ff4444' : '#ffa500';
+      items.push({ id: `f-${f.id}`, tipo: 'factura',
+        titulo: f.numero_factura ? `Factura ${f.numero_factura}` : f.concepto,
+        subtitulo: `${(f.importe ?? 0).toLocaleString('es-ES')} €`,
+        estado: f.estado, color, fecha: f.fecha_emision, link: '/financial' });
+    }
+
+    items.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+    activity.value = items.slice(0, 8);
+  }).catch(console.error);
+
+  return { kpis, activity, loading };
 }
