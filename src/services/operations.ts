@@ -105,9 +105,10 @@ export function useOperationsData() {
 }
 
 export async function createProyecto(form: Partial<Proyecto>): Promise<Proyecto> {
+  const { clientes, ...clean } = form as any;
   const { data, error } = await supabase
     .from('proyectos')
-    .insert(form)
+    .insert(clean)
     .select('*, clientes(nombre)')
     .single();
   if (error) throw error;
@@ -115,9 +116,10 @@ export async function createProyecto(form: Partial<Proyecto>): Promise<Proyecto>
 }
 
 export async function updateProyecto(id: string, updates: Partial<Proyecto>): Promise<Proyecto> {
+  const { clientes, ...clean } = updates as any;
   const { data, error } = await supabase
     .from('proyectos')
-    .update(updates)
+    .update(clean)
     .eq('id', id)
     .select('*, clientes(nombre)')
     .single();
