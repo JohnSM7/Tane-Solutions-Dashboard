@@ -96,10 +96,47 @@ const savePr = async () => {
     }
 
     if (editingPrId.value) {
+      const original = proyectos.value.find(p => p.id === editingPrId.value);
       const updated = await updateProyectoRentabilidad(editingPrId.value, payload);
       patchProyectoCliente(updated);
       const idx = proyectos.value.findIndex(p => p.id === editingPrId.value);
       if (idx !== -1) proyectos.value[idx] = updated;
+
+      // Detectar si cambió el plan de pago, presupuesto o hitos personalizados
+      const planChanged = original && (
+        original.plan_pago !== payload.plan_pago ||
+        original.presupuesto !== payload.presupuesto ||
+        JSON.stringify(original.personalizado_pagos) !== JSON.stringify(payload.personalizado_pagos)
+      );
+
+      if (planChanged) {
+        const facturasProyecto = facturas.value.filter(f => f.proyecto_id === editingPrId.value);
+        const facturasRegenerables = facturasProyecto.filter(f => f.estado !== 'Pagada');
+        if (facturasRegenerables.length > 0) {
+          const confirmar = confirm(
+            `El plan de pago ha cambiado. ¿Deseas eliminar las ${facturasRegenerables.length} factura(s) pendiente(s) y regenerarlas según el nuevo plan?`
+          );
+          if (confirmar) {
+            generatingInvoices.value = true;
+            for (const f of facturasRegenerables) {
+              await deleteFactura(f.id);
+            }
+            facturas.value = facturas.value.filter(
+              f => !(f.proyecto_id === editingPrId.value && f.estado !== 'Pagada')
+            );
+            if (updated.presupuesto > 0) {
+              const nuevasFacturas = await createFacturasFromPlan(updated, payload.cliente_id ?? null);
+              nuevasFacturas.forEach(patchFacturaJoins);
+              facturas.value.unshift(...nuevasFacturas);
+            }
+          }
+        } else if (updated.presupuesto > 0 && facturasProyecto.length === 0) {
+          generatingInvoices.value = true;
+          const nuevasFacturas = await createFacturasFromPlan(updated, payload.cliente_id ?? null);
+          nuevasFacturas.forEach(patchFacturaJoins);
+          facturas.value.unshift(...nuevasFacturas);
+        }
+      }
     } else {
       const created = await createProyectoRentabilidad(payload);
       patchProyectoCliente(created);
