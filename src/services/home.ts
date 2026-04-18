@@ -123,8 +123,8 @@ export function useHomeData() {
   Promise.all([
     supabase.from('tickets').select('id, asunto, estado, prioridad, fecha_creacion, clientes(nombre)')
       .order('fecha_creacion', { ascending: false }).limit(4),
-    supabase.from('leads').select('id, nombre, empresa, estado, created_at')
-      .order('created_at', { ascending: false }).limit(4),
+    supabase.from('leads').select('id, nombre, empresa, estado, fecha_creacion')
+      .order('fecha_creacion', { ascending: false }).limit(4),
     supabase.from('facturas').select('id, numero_factura, concepto, estado, importe, fecha_emision')
       .order('fecha_emision', { ascending: false }).limit(3),
   ]).then(([ticketsR, leadsR, facturasR]) => {
@@ -139,7 +139,7 @@ export function useHomeData() {
     for (const l of (leadsR.data ?? []) as any[]) {
       const color = l.estado === 'Cerrado-Ganado' ? '#4ade80' : l.estado === 'Cerrado-Perdido' ? '#94a3b8' : '#e3ff04';
       items.push({ id: `l-${l.id}`, tipo: 'lead', titulo: l.empresa || l.nombre,
-        subtitulo: l.nombre, estado: l.estado, color, fecha: l.created_at, link: '/commercial' });
+        subtitulo: l.nombre, estado: l.estado, color, fecha: l.fecha_creacion, link: '/commercial' });
     }
     for (const f of (facturasR.data ?? []) as any[]) {
       const color = f.estado === 'Pagada' ? '#4ade80' : f.estado === 'Vencida' ? '#ff4444' : '#ffa500';
