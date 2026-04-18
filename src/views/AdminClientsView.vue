@@ -206,7 +206,7 @@ const confirmDeleteClient = async (c: typeof clients.value[0]) => {
 .loading-state, .empty-state { color: var(--color-text-muted); font-style: italic; padding: 1.5rem 0; text-align: center; }
 
 .filters-container { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
-.search-input { flex: 1; min-width: 250px; background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.6rem 1rem; border-radius: 6px; font-family: inherit; font-size: 0.95rem; outline: none; color-scheme: dark; }
+.search-input { flex: 1; min-width: 0; background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.6rem 1rem; border-radius: 6px; font-family: inherit; font-size: 0.95rem; outline: none; color-scheme: dark; }
 .search-input:focus { border-color: var(--color-primary); }
 .status-select { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.6rem 1rem; border-radius: 6px; font-family: inherit; outline: none; color-scheme: dark; }
 .btn-primary { background-color: var(--color-primary); color: #000; font-weight: 700; padding: 0.6rem 1.2rem; border: none; border-radius: 6px; cursor: pointer; }
@@ -227,13 +227,13 @@ const confirmDeleteClient = async (c: typeof clients.value[0]) => {
 .status-badge.activo { background: rgba(74,222,128,0.2); color: #4ade80; }
 .status-badge.inactivo { background: rgba(248,113,113,0.2); color: #f87171; }
 
-.health-cell { display: flex; flex-direction: column; gap: 4px; min-width: 110px; }
+.health-cell { display: flex; flex-direction: column; gap: 4px; min-width: 80px; }
 .health-bar-bg { height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; }
 .health-bar    { height: 4px; border-radius: 2px; transition: width 0.4s; }
 .health-label  { font-size: 0.75rem; font-weight: 600; }
 
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 1000; }
-.modal-box { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 12px; padding: 2rem; width: 90%; max-width: 540px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.modal-box { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 12px; padding: 2rem; width: 90%; max-width: 540px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; overflow-x: hidden; }
 .modal-title { font-size: 1.2rem; font-weight: 700; margin: 0 0 1.5rem; color: var(--color-text-light); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--color-border); }
 .form-row { display: flex; gap: 0.75rem; }
@@ -249,5 +249,10 @@ const confirmDeleteClient = async (c: typeof clients.value[0]) => {
 @media (max-width: 768px) {
   .filters-container { flex-direction: column; align-items: stretch; }
   .form-row { flex-direction: column; }
+}
+@media (max-width: 600px) {
+  .table-responsive { overflow-x: auto; }
+  .data-table th:nth-child(3),
+  .data-table td:nth-child(3) { display: none; }
 }
 </style>

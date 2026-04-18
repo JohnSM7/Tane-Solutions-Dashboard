@@ -292,7 +292,7 @@ const horasPendientesMiembro = computed(() => {
 .subtitle { color: var(--color-text-muted); font-size: 1.1rem; }
 .loading-state { color: var(--color-text-muted); font-style: italic; padding: 2rem 0; }
 
-.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; }
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 1.5rem; }
 .kpi-item { display: flex; flex-direction: column; }
 .kpi-label { font-size: 0.9rem; color: var(--color-text-muted); margin-bottom: 0.5rem; }
 .kpi-value { font-size: 2rem; font-weight: 700; margin-right: 1rem; }

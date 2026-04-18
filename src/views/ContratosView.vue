@@ -360,7 +360,7 @@ const exportar = () => exportCsv('contratos.csv', filtered.value.map(c => ({
 
 /* Filters */
 .filters-bar { display: flex; gap: 0.75rem; flex-wrap: wrap; }
-.search-input  { flex: 1; min-width: 220px; background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.6rem 1rem; border-radius: 6px; font-family: inherit; font-size: 0.95rem; outline: none; color-scheme: dark; }
+.search-input  { flex: 1; min-width: 0; background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.6rem 1rem; border-radius: 6px; font-family: inherit; font-size: 0.95rem; outline: none; color-scheme: dark; }
 .search-input:focus { border-color: var(--color-primary); }
 .select-filter { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.6rem 1rem; border-radius: 6px; font-family: inherit; outline: none; color-scheme: dark; }
 
@@ -406,7 +406,7 @@ const exportar = () => exportCsv('contratos.csv', filtered.value.map(c => ({
 
 /* Modal */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 1000; }
-.modal-box { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 12px; padding: 2rem; width: 90%; max-width: 560px; max-height: 90vh; overflow-y: auto; }
+.modal-box { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 12px; padding: 2rem; width: 90%; max-width: 560px; max-height: 90vh; overflow-y: auto; overflow-x: hidden; }
 .modal-title { font-size: 1.2rem; font-weight: 700; margin: 0 0 1.5rem; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--color-border); }
 .form-row { display: flex; gap: 0.75rem; }

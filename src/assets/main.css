@@ -89,14 +89,32 @@ h6 {
 }
 
 @media (max-width: 768px) {
-  html {
-    font-size: 14px;
-    /* Scale down base size */
+  html { font-size: 14px; }
+  h1   { font-size: 1.75rem; }
+}
+
+@media (max-width: 600px) {
+  html { font-size: 13px; }
+  h1   { font-size: 1.5rem; }
+
+  /* Search inputs always full-width on small screens */
+  .search-input,
+  .search-input-sm {
+    min-width: 0 !important;
+    width: 100% !important;
   }
 
-  h1 {
-    font-size: 1.75rem;
-    /* Smaller headers */
+  /* Modals: safe on small screens */
+  .modal-box {
+    padding: 1.25rem !important;
+    max-height: 85vh !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Filters row wraps */
+  .filters-row,
+  .header-actions {
+    flex-wrap: wrap !important;
   }
 }
 

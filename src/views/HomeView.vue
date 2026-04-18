@@ -208,7 +208,7 @@ const modules = [
 /* KPI grid */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 1fr));
   gap: 1rem;
 }
 .kpi { display: flex; flex-direction: column; gap: 0.25rem; }
@@ -280,5 +280,9 @@ const modules = [
   .kpi-grid { grid-template-columns: 1fr 1fr; }
   .kpi-value { font-size: 1.4rem; }
   .bottom-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .kpi-grid { grid-template-columns: 1fr 1fr; }
+  .kpi-value { font-size: 1.2rem; }
 }
 </style>

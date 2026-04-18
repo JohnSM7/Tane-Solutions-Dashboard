@@ -361,7 +361,7 @@ const formatTime = (iso: string) => {
 .subtitle { color: var(--color-text-muted); font-size: 1.1rem; }
 .loading-state { color: var(--color-text-muted); font-style: italic; padding: 2rem 0; }
 
-.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; }
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 1.5rem; }
 .kpi-item { display: flex; flex-direction: column; }
 .kpi-label { font-size: 0.9rem; color: var(--color-text-muted); margin-bottom: 0.5rem; }
 .kpi-value { font-size: 2rem; font-weight: 700; margin-right: 1rem; }
@@ -380,7 +380,7 @@ const formatTime = (iso: string) => {
 .server-uptime { font-size: 0.8rem; color: var(--color-text-muted); margin-left: 1.5rem; }
 
 .ticket-actions-header { display: flex; gap: 0.5rem; align-items: center; }
-.search-input-sm { background: var(--color-bg-dark); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.82rem; outline: none; color-scheme: dark; width: 150px; }
+.search-input-sm { background: var(--color-bg-dark); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.82rem; outline: none; color-scheme: dark; min-width: 0; flex: 1; max-width: 200px; }
 .search-input-sm:focus { border-color: var(--color-primary); }
 .btn-edit-action { background: transparent; border: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 0.8rem; padding: 0.3rem 0.7rem; border-radius: 4px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
 .btn-edit-action:hover { border-color: var(--color-primary); color: var(--color-primary); }
