@@ -25,7 +25,7 @@ jobs:
           supabase secrets set RESEND_API_KEY="re_digmYSnx_MTMP6941TZ8xauL8MABURJxo" \
             --project-ref idogljsfqunkvmvvnyrx
         env:
-          SUPABASE_ACCESS_TOKEN: sbp_bfab408ee693aac663e8f304cb07014aea1a553a
+          SUPABASE_ACCESS_TOKEN: sbp_cd9d1714644640ecf53732c4ac1b51e82550fa9b
 
       - name: Deploy send-email function
         run: |
@@ -33,4 +33,4 @@ jobs:
             --project-ref idogljsfqunkvmvvnyrx \
             --no-verify-jwt
         env:
-          SUPABASE_ACCESS_TOKEN: sbp_bfab408ee693aac663e8f304cb07014aea1a553a
+          SUPABASE_ACCESS_TOKEN: sbp_cd9d1714644640ecf53732c4ac1b51e82550fa9b
