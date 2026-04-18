@@ -6,6 +6,9 @@ import ClientReportGenerator from '../components/ClientReportGenerator.vue';
 import { useClientProfile, computeHealthScore, healthColor, healthLabel, type Sede } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
 import { listarInformes, eliminarInforme, type InformeGuardado } from '../services/reportes';
+import { useGmbHistorico, tomarSnapshot } from '../services/gmbHistorico';
+import GmbChart from '../components/GmbChart.vue';
+import { generarInformeMensualPDF } from '../services/informeMensual';
 
 const route = useRoute();
 const clientId = route.params.id as string;
@@ -182,6 +185,41 @@ const estadoColor: Record<string, string> = {
 
 const showReportGenerator = ref(false);
 
+// ── Histórico GMB ─────────────────────────────────────────────────────────────
+const { snapshots: gmbSnapshots, refresh: refreshGmb } = useGmbHistorico(clientId);
+const savingSnapshot = ref(false);
+
+const generandoPDF = ref(false);
+const generarPDF = () => {
+  if (!clientData.value) return;
+  generandoPDF.value = true;
+  const periodo = new Date().toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+  try {
+    generarInformeMensualPDF({
+      cliente:   clientData.value,
+      sedes:     sedes.value,
+      proyectos: proyectos.value,
+      facturas:  facturas.value,
+      tickets:   [],
+      periodo,
+    });
+  } finally {
+    generandoPDF.value = false;
+  }
+};
+
+const guardarSnapshot = async () => {
+  savingSnapshot.value = true;
+  try {
+    await tomarSnapshot(sedes.value, clientId);
+    await refreshGmb();
+  } catch (e: any) {
+    alert('Error al guardar snapshot: ' + (e.message ?? ''));
+  } finally {
+    savingSnapshot.value = false;
+  }
+};
+
 // ── Health Score ──────────────────────────────────────────────────────────────
 const clientHealth = computed(() => {
   if (!clientData.value) return 100;
@@ -230,7 +268,12 @@ const formatDate = (iso: string) =>
             </div>
           </div>
         </div>
-        <button class="btn-primary" @click="openEditModal">Editar Perfil</button>
+        <div style="display:flex; gap:0.75rem; align-items:center;">
+          <button class="btn-outline" @click="generarPDF" :disabled="generandoPDF">
+            {{ generandoPDF ? '...' : '📄 Informe PDF' }}
+          </button>
+          <button class="btn-primary" @click="openEditModal">Editar Perfil</button>
+        </div>
       </div>
 
       <div class="content-grid">
@@ -434,6 +477,16 @@ const formatDate = (iso: string) =>
               </div>
             </DashboardCard>
           </template>
+
+          <!-- Histórico GMB -->
+          <DashboardCard title="Evolución GMB" v-if="selectedSedeId === 'all' && sedes.length > 0">
+            <template #actions>
+              <button class="btn-icon-text" @click="guardarSnapshot" :disabled="savingSnapshot">
+                {{ savingSnapshot ? '...' : '📸 Guardar snapshot' }}
+              </button>
+            </template>
+            <GmbChart :snapshots="gmbSnapshots" />
+          </DashboardCard>
 
           <!-- Usuarios del cliente -->
           <DashboardCard title="Accesos (Usuarios del Cliente)" v-if="selectedSedeId === 'all'">

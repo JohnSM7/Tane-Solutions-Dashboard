@@ -3,14 +3,18 @@ import { ref, computed, onMounted } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
 import { authStore, logout } from '../../store/auth';
 import { fetchAlertasCount } from '../../services/alerts';
+import { notifStore, initRealtime, marcarTodasLeidas } from '../../store/notifications';
 
 const router = useRouter();
 
 const alertasCount = ref(0);
 
+const showNotifPanel = ref(false);
+
 onMounted(async () => {
   if (authStore.role === 'ADMIN') {
     alertasCount.value = await fetchAlertasCount().catch(() => 0);
+    initRealtime();
   }
 });
 
@@ -91,12 +95,43 @@ const handleLogout = async () => {
                     <span class="role">{{ authStore.role === 'ADMIN' ? 'Agencia' : 'Cliente Titular' }}</span>
                 </div>
             </div>
-            <button class="logout-btn" @click="handleLogout" title="Cerrar Sesión">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                    <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
-                </svg>
-            </button>
+            <div class="notif-logout">
+                <button class="notif-btn" @click="showNotifPanel = !showNotifPanel" title="Notificaciones" v-if="authStore.role === 'ADMIN'">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                        <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+                    </svg>
+                    <span v-if="notifStore.unread > 0" class="notif-badge">
+                        {{ notifStore.unread > 9 ? '9+' : notifStore.unread }}
+                    </span>
+                </button>
+                <button class="logout-btn" @click="handleLogout" title="Cerrar Sesión">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                        <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
+                    </svg>
+                </button>
+            </div>
         </div>
+
+        <!-- Panel de notificaciones -->
+        <Transition name="slide-up">
+        <div v-if="showNotifPanel" class="notif-panel">
+            <div class="notif-panel-header">
+                <span>Notificaciones</span>
+                <button class="notif-clear" @click="marcarTodasLeidas">Marcar leídas</button>
+            </div>
+            <div v-if="notifStore.items.length === 0" class="notif-empty">Sin notificaciones</div>
+            <div v-else class="notif-list">
+                <div v-for="n in notifStore.items" :key="n.id"
+                    class="notif-item" :class="{ unread: !n.leida }">
+                    <span class="notif-icon">{{ n.tipo === 'ticket' ? '🎫' : '🚨' }}</span>
+                    <div class="notif-body">
+                        <span class="notif-title">{{ n.titulo }}</span>
+                        <span class="notif-sub">{{ n.subtitulo }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </Transition>
     </aside>
     
     <!-- Mobile overlay -->
@@ -302,6 +337,67 @@ const handleLogout = async () => {
     color: #f87171;
     background: rgba(248, 113, 113, 0.1);
 }
+
+.notif-logout { display: flex; align-items: center; gap: 4px; }
+
+.notif-btn {
+    position: relative;
+    background: none; border: none;
+    color: var(--color-text-muted); cursor: pointer;
+    padding: 0.5rem; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.3s;
+}
+.notif-btn:hover { color: var(--color-primary); background: rgba(227,255,4,0.1); }
+.notif-badge {
+    position: absolute; top: 2px; right: 2px;
+    background: #ff4444; color: #fff;
+    font-size: 0.6rem; font-weight: 700;
+    min-width: 15px; height: 15px;
+    border-radius: 8px; display: flex;
+    align-items: center; justify-content: center;
+    padding: 0 3px;
+}
+
+.notif-panel {
+    position: absolute;
+    bottom: 80px;
+    left: 1rem;
+    right: 1rem;
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
+    z-index: 200;
+    overflow: hidden;
+    max-height: 320px;
+    display: flex;
+    flex-direction: column;
+}
+.notif-panel-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+    font-weight: 700; font-size: 0.85rem;
+}
+.notif-clear { background: none; border: none; color: var(--color-primary); font-size: 0.75rem; cursor: pointer; }
+.notif-empty { padding: 1.5rem; text-align: center; color: var(--color-text-muted); font-size: 0.85rem; }
+.notif-list  { overflow-y: auto; }
+.notif-item  {
+    display: flex; align-items: flex-start; gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+    transition: background 0.15s;
+}
+.notif-item:last-child { border-bottom: none; }
+.notif-item.unread { background: rgba(227,255,4,0.04); }
+.notif-icon  { font-size: 1rem; flex-shrink: 0; margin-top: 2px; }
+.notif-body  { display: flex; flex-direction: column; gap: 2px; }
+.notif-title { font-size: 0.82rem; font-weight: 600; }
+.notif-sub   { font-size: 0.75rem; color: var(--color-text-muted); }
+
+.slide-up-enter-active, .slide-up-leave-active { transition: all 0.2s ease; }
+.slide-up-enter-from, .slide-up-leave-to { opacity: 0; transform: translateY(10px); }
 
 .alert-badge {
     margin-left: auto;
