@@ -43,13 +43,18 @@ const saveProyecto = async () => {
     if (!payload.fecha_entrega_real) delete payload.fecha_entrega_real;
     if (!payload.cliente_id) delete payload.cliente_id;
 
+    const patchCliente = (p: Proyecto) => {
+      const cl = clients.value.find(c => c.id === p.cliente_id);
+      if (cl) p.clientes = { nombre: cl.name };
+      return p;
+    };
+
     if (editingId.value) {
-      const updated = await updateProyecto(editingId.value, payload);
+      const updated = patchCliente(await updateProyecto(editingId.value, payload));
       const idx = proyectos.value.findIndex(p => p.id === editingId.value);
       if (idx !== -1) proyectos.value[idx] = updated;
     } else {
-      const created = await createProyecto(payload);
-      proyectos.value.unshift(created);
+      proyectos.value.unshift(patchCliente(await createProyecto(payload)));
     }
     showProyModal.value = false;
   } catch (error: any) {
@@ -76,6 +81,8 @@ const changeEstado = async (p: Proyecto, estado: string) => {
     const updates: Partial<Proyecto> = { estado: estado as Proyecto['estado'] };
     if (estado === 'Completado') updates.fecha_entrega_real = new Date().toISOString().split('T')[0];
     const updated = await updateProyecto(p.id, updates);
+    const cl = clients.value.find(c => c.id === updated.cliente_id);
+    if (cl) updated.clientes = { nombre: cl.name };
     const idx = proyectos.value.findIndex(x => x.id === p.id);
     if (idx !== -1) proyectos.value[idx] = updated;
   } catch (error: any) {

@@ -87,16 +87,23 @@ export function useOperationsData() {
   Promise.all([
     supabase
       .from('proyectos')
-      .select('*, clientes(nombre)')
+      .select('*')
       .order('fecha_inicio', { ascending: false }),
     supabase
       .from('usuarios')
       .select('id, nombre, rol, horas_disponibles_semana')
       .eq('rol', 'ADMIN')
       .order('nombre'),
-  ]).then(([proyectosRes, equipoRes]) => {
-    proyectos.value = (proyectosRes.data ?? []) as Proyecto[];
-    equipo.value    = (equipoRes.data ?? []) as UsuarioAdmin[];
+    supabase
+      .from('clientes')
+      .select('id, nombre'),
+  ]).then(([proyectosRes, equipoRes, clientesRes]) => {
+    const clienteMap = new Map((clientesRes.data ?? []).map((c: any) => [c.id, c.nombre]));
+    proyectos.value = ((proyectosRes.data ?? []) as Proyecto[]).map(p => ({
+      ...p,
+      clientes: p.cliente_id ? { nombre: clienteMap.get(p.cliente_id) ?? '' } : undefined,
+    }));
+    equipo.value = (equipoRes.data ?? []) as UsuarioAdmin[];
   })
   .catch(console.error)
   .finally(() => { loading.value = false; });
@@ -109,7 +116,7 @@ export async function createProyecto(form: Partial<Proyecto>): Promise<Proyecto>
   const { data, error } = await supabase
     .from('proyectos')
     .insert(clean)
-    .select('*, clientes(nombre)')
+    .select('*')
     .single();
   if (error) throw error;
   return data as Proyecto;
@@ -121,7 +128,7 @@ export async function updateProyecto(id: string, updates: Partial<Proyecto>): Pr
     .from('proyectos')
     .update(clean)
     .eq('id', id)
-    .select('*, clientes(nombre)')
+    .select('*')
     .single();
   if (error) throw error;
   return data as Proyecto;
