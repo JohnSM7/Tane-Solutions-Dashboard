@@ -22,22 +22,20 @@ const fmt = (n: number) =>
 
     <div class="bars">
       <div v-for="col in data" :key="col.month" class="bar-col">
-        <div class="bar-pair">
-          <div class="bar-group">
-            <div
-              class="bar bar-prev"
-              :style="{ height: col.prev + '%' }"
-              :title="`Año anterior: ${fmt(col.prevRaw)}`"
-            ></div>
-            <div
-              class="bar bar-current"
-              :style="{ height: col.current + '%' }"
-              :title="`Este año: ${fmt(col.currentRaw)}`"
-            ></div>
-          </div>
-          <div class="bar-values">
-            <span v-if="col.currentRaw > 0" class="val-current">{{ fmt(col.currentRaw) }}</span>
-          </div>
+        <span class="val-current" :class="{ invisible: col.currentRaw === 0 }">
+          {{ fmt(col.currentRaw) }}
+        </span>
+        <div class="bar-group">
+          <div
+            class="bar bar-prev"
+            :style="{ height: col.prev + '%' }"
+            :title="`Año anterior: ${fmt(col.prevRaw)}`"
+          ></div>
+          <div
+            class="bar bar-current"
+            :style="{ height: col.current + '%' }"
+            :title="`Este año: ${fmt(col.currentRaw)}`"
+          ></div>
         </div>
         <span class="bar-label">{{ col.month }}</span>
       </div>
@@ -60,11 +58,9 @@ const fmt = (n: number) =>
 
 .bars {
   display: flex;
-  align-items: flex-end;
-  gap: 0.5rem;
-  height: 160px;
-  padding-bottom: 1.5rem;
-  position: relative;
+  align-items: stretch;
+  gap: 0.4rem;
+  height: 180px;
 }
 
 .bar-col {
@@ -72,26 +68,30 @@ const fmt = (n: number) =>
   display: flex;
   flex-direction: column;
   align-items: center;
-  height: 100%;
-  justify-content: flex-end;
-  gap: 0.25rem;
+  min-width: 0;
 }
 
-.bar-pair {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  flex: 1;
-  justify-content: flex-end;
+.val-current {
+  font-size: 0.58rem;
+  color: var(--color-primary);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  text-align: center;
+  height: 1rem;
+  line-height: 1rem;
+  flex-shrink: 0;
 }
+.val-current.invisible { visibility: hidden; }
 
 .bar-group {
   display: flex;
   align-items: flex-end;
   gap: 2px;
   width: 100%;
-  height: 100%;
+  flex: 1;
 }
 
 .bar {
@@ -105,24 +105,15 @@ const fmt = (n: number) =>
 .bar-current:hover { opacity: 1; }
 .bar-prev:hover    { background: #3a3a3a; }
 
-.bar-values {
-  height: 1.1rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.val-current {
-  font-size: 0.6rem;
-  color: var(--color-primary);
-  font-weight: 700;
-  white-space: nowrap;
-}
-
 .bar-label {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--color-text-muted);
-  position: absolute;
-  bottom: 0;
+  text-align: center;
+  padding-top: 0.25rem;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  flex-shrink: 0;
 }
 </style>

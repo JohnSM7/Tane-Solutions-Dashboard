@@ -2,17 +2,19 @@ import { ref } from 'vue';
 import { supabase } from '../supabase';
 
 export type HomeKpis = {
-  facturacionMes:    number;
-  porCobrar:         number;
-  facturasVencidas:  number;
-  clientesActivos:   number;
-  pipelineValor:     number;
-  proyectosActivos:  number;
-  proyectosEnRiesgo: number;
-  ticketsAbiertos:   number;
-  teamLoadPct:       number;
-  alertasTotal:      number;
-  tareasPendientes:  number;
+  facturacionMes:       number;
+  facturacionMesAnterior: number;
+  tendenciaPct:         number;
+  porCobrar:            number;
+  facturasVencidas:     number;
+  clientesActivos:      number;
+  pipelineValor:        number;
+  proyectosActivos:     number;
+  proyectosEnRiesgo:    number;
+  ticketsAbiertos:      number;
+  teamLoadPct:          number;
+  alertasTotal:         number;
+  tareasPendientes:     number;
 };
 
 export type ActivityItem = {
@@ -33,13 +35,19 @@ export function useHomeData() {
 
   const now = new Date();
   const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const firstOfPrevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}-01`;
 
   Promise.all([
     // 1. Facturas del mes pagadas
     supabase.from('facturas').select('importe').eq('estado', 'Pagada')
       .gte('fecha_emision', firstOfMonth),
+    // 1b. Facturas del mes anterior pagadas (tendencia)
+    supabase.from('facturas').select('importe').eq('estado', 'Pagada')
+      .gte('fecha_emision', firstOfPrevMonth).lt('fecha_emision', firstOfMonth),
     // 2. Facturas pendientes (todas)
     supabase.from('facturas').select('importe').neq('estado', 'Pagada'),
+
     // 3. Facturas vencidas
     supabase.from('facturas').select('id', { count: 'exact', head: true }).eq('estado', 'Vencida'),
     // 4. Clientes activos
@@ -66,10 +74,14 @@ export function useHomeData() {
       supabase.from('servidores').select('id', { count: 'exact', head: true }).neq('estado', 'Online'),
     ]),
   ]).then(([
-    facMesRes, pendienteRes, vencidasRes, clientesRes,
+    facMesRes, facMesAntRes, pendienteRes, vencidasRes, clientesRes,
     pipelineRes, proyectosRes, ticketsRes, capacidadRes, tareasRes, alertasGroup,
   ]) => {
-    const facturacionMes = (facMesRes.data ?? []).reduce((s: number, f: any) => s + f.importe, 0);
+    const facturacionMes        = (facMesRes.data ?? []).reduce((s: number, f: any) => s + f.importe, 0);
+    const facturacionMesAnterior = ((facMesAntRes as any).data ?? []).reduce((s: number, f: any) => s + f.importe, 0);
+    const tendenciaPct = facturacionMesAnterior > 0
+      ? Math.round((facturacionMes - facturacionMesAnterior) / facturacionMesAnterior * 100)
+      : 0;
     const porCobrar      = (pendienteRes.data ?? []).reduce((s: number, f: any) => s + f.importe, 0);
     const pipelineValor  = (pipelineRes.data ?? []).reduce((s: number, l: any) => s + l.valor_estimado, 0);
 
@@ -90,6 +102,8 @@ export function useHomeData() {
 
     kpis.value = {
       facturacionMes,
+      facturacionMesAnterior,
+      tendenciaPct,
       porCobrar,
       facturasVencidas:  vencidasRes.count ?? 0,
       clientesActivos:   clientesRes.count ?? 0,
@@ -109,8 +123,8 @@ export function useHomeData() {
   Promise.all([
     supabase.from('tickets').select('id, asunto, estado, prioridad, fecha_creacion, clientes(nombre)')
       .order('fecha_creacion', { ascending: false }).limit(4),
-    supabase.from('leads').select('id, nombre, empresa, estado, created_at')
-      .order('created_at', { ascending: false }).limit(4),
+    supabase.from('leads').select('id, nombre, empresa, estado, fecha_creacion')
+      .order('fecha_creacion', { ascending: false }).limit(4),
     supabase.from('facturas').select('id, numero_factura, concepto, estado, importe, fecha_emision')
       .order('fecha_emision', { ascending: false }).limit(3),
   ]).then(([ticketsR, leadsR, facturasR]) => {
@@ -125,7 +139,7 @@ export function useHomeData() {
     for (const l of (leadsR.data ?? []) as any[]) {
       const color = l.estado === 'Cerrado-Ganado' ? '#4ade80' : l.estado === 'Cerrado-Perdido' ? '#94a3b8' : '#e3ff04';
       items.push({ id: `l-${l.id}`, tipo: 'lead', titulo: l.empresa || l.nombre,
-        subtitulo: l.nombre, estado: l.estado, color, fecha: l.created_at, link: '/commercial' });
+        subtitulo: l.nombre, estado: l.estado, color, fecha: l.fecha_creacion, link: '/commercial' });
     }
     for (const f of (facturasR.data ?? []) as any[]) {
       const color = f.estado === 'Pagada' ? '#4ade80' : f.estado === 'Vencida' ? '#ff4444' : '#ffa500';

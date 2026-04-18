@@ -11,6 +11,7 @@ import {
 } from '../services/financial';
 import { useClientsList } from '../services/clients';
 import { exportCsv } from '../utils/exportCsv';
+import { supabase } from '../supabase';
 
 const { facturas, proyectos, proyectosConFacturas, kpis, monthlyBilling, loading } = useFinancialData();
 const { clients } = useClientsList();
@@ -95,10 +96,47 @@ const savePr = async () => {
     }
 
     if (editingPrId.value) {
+      const original = proyectos.value.find(p => p.id === editingPrId.value);
       const updated = await updateProyectoRentabilidad(editingPrId.value, payload);
       patchProyectoCliente(updated);
       const idx = proyectos.value.findIndex(p => p.id === editingPrId.value);
       if (idx !== -1) proyectos.value[idx] = updated;
+
+      // Detectar si cambió el plan de pago, presupuesto o hitos personalizados
+      const planChanged = original && (
+        original.plan_pago !== payload.plan_pago ||
+        original.presupuesto !== payload.presupuesto ||
+        JSON.stringify(original.personalizado_pagos) !== JSON.stringify(payload.personalizado_pagos)
+      );
+
+      if (planChanged) {
+        const facturasProyecto = facturas.value.filter(f => f.proyecto_id === editingPrId.value);
+        const facturasRegenerables = facturasProyecto.filter(f => f.estado !== 'Pagada');
+        if (facturasRegenerables.length > 0) {
+          const confirmar = confirm(
+            `El plan de pago ha cambiado. ¿Deseas eliminar las ${facturasRegenerables.length} factura(s) pendiente(s) y regenerarlas según el nuevo plan?`
+          );
+          if (confirmar) {
+            generatingInvoices.value = true;
+            for (const f of facturasRegenerables) {
+              await deleteFactura(f.id);
+            }
+            facturas.value = facturas.value.filter(
+              f => !(f.proyecto_id === editingPrId.value && f.estado !== 'Pagada')
+            );
+            if (updated.presupuesto > 0) {
+              const nuevasFacturas = await createFacturasFromPlan(updated, payload.cliente_id ?? null);
+              nuevasFacturas.forEach(patchFacturaJoins);
+              facturas.value.unshift(...nuevasFacturas);
+            }
+          }
+        } else if (updated.presupuesto > 0 && facturasProyecto.length === 0) {
+          generatingInvoices.value = true;
+          const nuevasFacturas = await createFacturasFromPlan(updated, payload.cliente_id ?? null);
+          nuevasFacturas.forEach(patchFacturaJoins);
+          facturas.value.unshift(...nuevasFacturas);
+        }
+      }
     } else {
       const created = await createProyectoRentabilidad(payload);
       patchProyectoCliente(created);
@@ -270,6 +308,17 @@ const cashFlow = computed(() => {
 
 const cashFlowMax = computed(() => Math.max(...cashFlow.value.map(m => m.total), 1));
 
+// ── CAC por cliente (leads ganados) ──────────────────────────────────────────
+const cacPorCliente = ref<Map<string, number>>(new Map());
+supabase.from('leads').select('cliente_id, cac').eq('estado', 'Cerrado-Ganado').then(({ data }) => {
+  const map = new Map<string, number>();
+  for (const l of (data ?? []) as any[]) {
+    if (!l.cliente_id) continue;
+    map.set(l.cliente_id, (map.get(l.cliente_id) ?? 0) + (l.cac ?? 0));
+  }
+  cacPorCliente.value = map;
+});
+
 // ── Rentabilidad por cliente ──────────────────────────────────────────────────
 const rentabilidadClientes = computed(() => {
   const map = new Map<string, {
@@ -298,15 +347,21 @@ const rentabilidadClientes = computed(() => {
   }
 
   return [...map.entries()]
-    .map(([id, d]) => ({
-      id,
-      nombre: d.nombre,
-      facturado: d.facturado,
-      cobrado: d.cobrado,
-      pendiente: d.facturado - d.cobrado,
-      coste: d.coste,
-      margen: d.facturado > 0 ? Math.round((d.facturado - d.coste) / d.facturado * 100) : 0,
-    }))
+    .map(([id, d]) => {
+      const cac = cacPorCliente.value.get(id) ?? 0;
+      const costoTotal = d.coste + cac;
+      return {
+        id,
+        nombre: d.nombre,
+        facturado: d.facturado,
+        cobrado: d.cobrado,
+        pendiente: d.facturado - d.cobrado,
+        coste: d.coste,
+        cac,
+        costoTotal,
+        margen: d.facturado > 0 ? Math.round((d.facturado - costoTotal) / d.facturado * 100) : 0,
+      };
+    })
     .sort((a, b) => b.facturado - a.facturado);
 });
 </script>
@@ -510,7 +565,8 @@ const rentabilidadClientes = computed(() => {
             <span class="ta-r">Facturado</span>
             <span class="ta-r">Cobrado</span>
             <span class="ta-r">Pendiente</span>
-            <span class="ta-r">Coste est.</span>
+            <span class="ta-r">Coste</span>
+            <span class="ta-r">CAC</span>
             <span class="ta-r">Margen</span>
           </div>
           <div v-for="row in rentabilidadClientes" :key="row.id" class="rent-row">
@@ -519,6 +575,7 @@ const rentabilidadClientes = computed(() => {
             <span class="ta-r" style="color:#4ade80">{{ formatEur(row.cobrado) }}</span>
             <span class="ta-r" :style="{ color: row.pendiente > 0 ? '#ffa500' : 'inherit' }">{{ formatEur(row.pendiente) }}</span>
             <span class="ta-r muted">{{ formatEur(row.coste) }}</span>
+            <span class="ta-r muted">{{ row.cac > 0 ? formatEur(row.cac) : '—' }}</span>
             <span class="ta-r">
               <span class="margen-pill" :class="{ high: row.margen >= 50, mid: row.margen >= 30 && row.margen < 50, low: row.margen < 30 }">
                 {{ row.margen }}%
@@ -701,7 +758,7 @@ const rentabilidadClientes = computed(() => {
 .subtitle { color: var(--color-text-muted); font-size: 1.1rem; }
 .loading-state { color: var(--color-text-muted); font-style: italic; padding: 2rem 0; }
 
-.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; }
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 1.5rem; }
 .kpi-item { display: flex; flex-direction: column; }
 .kpi-label { font-size: 0.9rem; color: var(--color-text-muted); margin-bottom: 0.5rem; }
 .kpi-value { font-size: 1.8rem; font-weight: 700; margin-right: 0.5rem; }
@@ -718,7 +775,7 @@ const rentabilidadClientes = computed(() => {
 .bar { width: 20px; border-radius: 4px 4px 0 0; }
 .bar.prev { background: #333; }
 .bar.current { background: var(--color-primary); }
-.bar-label { position: absolute; bottom: -25px; left: 50%; transform: translateX(-50%); font-size: 0.78rem; color: var(--color-text-muted); white-space: nowrap; }
+.bar-label { font-size: 0.72rem; color: var(--color-text-muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
 .legend { display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem; }
 .legend-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
 .dot { width: 10px; height: 10px; border-radius: 50%; }
@@ -767,7 +824,7 @@ const rentabilidadClientes = computed(() => {
 
 /* Facturas del proyecto */
 .pb-facturas { padding: 1rem 1.25rem; border-top: 1px solid var(--color-border); background: rgba(0,0,0,0.15); }
-.facturas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; }
+.facturas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 0.75rem; }
 
 .factura-card { background: var(--color-bg-lighter); border-radius: 8px; padding: 1rem; border-left: 3px solid #555; display: flex; flex-direction: column; gap: 0.4rem; }
 .factura-card.pagada { border-left-color: #4ade80; }
@@ -800,7 +857,7 @@ const rentabilidadClientes = computed(() => {
 
 /* Modals */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 1000; }
-.modal-box { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 12px; padding: 2rem; width: 90%; max-width: 500px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; }
+.modal-box { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 12px; padding: 2rem; width: 90%; max-width: 500px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; overflow-x: hidden; }
 .modal-title { font-size: 1.2rem; font-weight: 700; margin: 0 0 1.5rem; color: var(--color-text-light); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--color-border); }
 .form-row { display: flex; gap: 0.75rem; }
@@ -866,8 +923,8 @@ const rentabilidadClientes = computed(() => {
 .cf-bar.cobrado   { background: #4ade80; }
 .cf-bar.pendiente { background: #ffa500; }
 .cf-bar.vencido   { background: #ff4444; }
-.cf-label { font-size: 0.75rem; color: var(--color-text-muted); text-transform: capitalize; }
-.cf-total { font-size: 0.72rem; color: var(--color-text-muted); }
+.cf-label { font-size: 0.75rem; color: var(--color-text-muted); text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.cf-total { font-size: 0.72rem; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .cf-legend { display: flex; gap: 1.5rem; }
 .cf-leg-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; color: var(--color-text-muted); }
 .cf-dot { width: 10px; height: 10px; border-radius: 50%; }

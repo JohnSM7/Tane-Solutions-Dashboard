@@ -356,7 +356,7 @@ const formatDate = (iso: string) =>
 .subtitle { color: var(--color-text-muted); font-size: 1.1rem; }
 .loading-state { color: var(--color-text-muted); font-style: italic; padding: 2rem 0; }
 
-.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; }
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 1.5rem; }
 .kpi-item { display: flex; flex-direction: column; }
 .kpi-label { font-size: 0.9rem; color: var(--color-text-muted); margin-bottom: 0.5rem; }
 .kpi-value { font-size: 2rem; font-weight: 700; margin-right: 1rem; }
@@ -367,7 +367,7 @@ const formatDate = (iso: string) =>
 @media (max-width: 900px) { .content-grid { grid-template-columns: 1fr; } }
 
 .funnel-container { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 1rem 0; }
-.funnel-step { background-color: var(--color-primary); color: #000; text-align: center; padding: 0.8rem; font-weight: 700; border-radius: 4px; white-space: nowrap; min-width: 160px; }
+.funnel-step { background-color: var(--color-primary); color: #000; text-align: center; padding: 0.8rem; font-weight: 700; border-radius: 4px; white-space: nowrap; min-width: min(160px, 90%); width: 80%; }
 .funnel-step.highlight { background-color: #4ade80; }
 
 .services-list { list-style: none; padding: 0; }
@@ -377,7 +377,7 @@ const formatDate = (iso: string) =>
 .fill { height: 100%; background-color: var(--color-primary); }
 
 .table-controls { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
-.search-input-sm { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.3rem 0.7rem; border-radius: 4px; font-size: 0.85rem; outline: none; color-scheme: dark; min-width: 180px; }
+.search-input-sm { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.3rem 0.7rem; border-radius: 4px; font-size: 0.85rem; outline: none; color-scheme: dark; min-width: 0; flex: 1; }
 .search-input-sm:focus { border-color: var(--color-primary); }
 .filter-select { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.85rem; outline: none; color-scheme: dark; }
 .btn-primary-sm { background: var(--color-primary); color: #000; font-weight: 700; font-size: 0.85rem; padding: 0.35rem 0.9rem; border: none; border-radius: 4px; cursor: pointer; }
@@ -402,7 +402,8 @@ const formatDate = (iso: string) =>
 
 /* Modals */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 1000; }
-.modal-box { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 12px; padding: 2rem; width: 90%; max-width: 560px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; }
+.modal-box { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 12px; padding: 2rem; width: 90%; max-width: 560px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; overflow-x: hidden; }
+@media (max-width: 600px) { .form-row { flex-direction: column; } }
 .modal-title { font-size: 1.2rem; font-weight: 700; margin: 0 0 1.5rem; color: var(--color-text-light); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--color-border); }
 .form-row { display: flex; gap: 0.75rem; }

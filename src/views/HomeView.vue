@@ -57,6 +57,9 @@ const modules = [
           <div class="kpi">
             <span class="kpi-label">Facturación este mes</span>
             <span class="kpi-value" style="color: var(--color-primary)">{{ fmt(kpis.facturacionMes) }}</span>
+            <span class="kpi-trend" :class="kpis.tendenciaPct >= 0 ? 'up' : 'down'">
+              {{ kpis.tendenciaPct >= 0 ? '▲' : '▼' }} {{ Math.abs(kpis.tendenciaPct) }}% vs mes anterior
+            </span>
           </div>
         </DashboardCard>
         <DashboardCard>
@@ -205,7 +208,7 @@ const modules = [
 /* KPI grid */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 1fr));
   gap: 1rem;
 }
 .kpi { display: flex; flex-direction: column; gap: 0.25rem; }
@@ -214,6 +217,9 @@ const modules = [
 .kpi-sub   { font-size: 0.78rem; color: var(--color-text-muted); }
 .kpi-sub.danger { color: #f87171; }
 .kpi-sub.ok     { color: #4ade80; }
+.kpi-trend      { font-size: 0.78rem; font-weight: 600; }
+.kpi-trend.up   { color: #4ade80; }
+.kpi-trend.down { color: #f87171; }
 
 .mini-bar-bg { height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 6px; }
 .mini-bar    { height: 4px; border-radius: 2px; transition: width 0.4s; }
@@ -274,5 +280,9 @@ const modules = [
   .kpi-grid { grid-template-columns: 1fr 1fr; }
   .kpi-value { font-size: 1.4rem; }
   .bottom-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .kpi-grid { grid-template-columns: 1fr 1fr; }
+  .kpi-value { font-size: 1.2rem; }
 }
 </style>
