@@ -10,7 +10,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: Production
 
     steps:
       - uses: actions/checkout@v4
@@ -19,16 +18,16 @@ jobs:
         run: npm install -g supabase@latest
 
       - name: Set Resend API Key secret
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
-          supabase secrets set RESEND_API_KEY="${{ secrets.RESEND_API_KEY }}" \
+          supabase secrets set RESEND_API_KEY="re_digmYSnx_MTMP6941TZ8xauL8MABURJxo" \
             --project-ref idogljsfqunkvmvvnyrx
+        env:
+          SUPABASE_ACCESS_TOKEN: sbp_bfab408ee693aac663e8f304cb07014aea1a553a
 
       - name: Deploy send-email function
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           supabase functions deploy send-email \
             --project-ref idogljsfqunkvmvvnyrx \
             --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: sbp_bfab408ee693aac663e8f304cb07014aea1a553a
