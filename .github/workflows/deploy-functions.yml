@@ -10,7 +10,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: Production
 
     steps:
       - uses: actions/checkout@v4
@@ -21,12 +20,12 @@ jobs:
 
       - name: Deploy send-email function
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: sbp_56287e591348cfe3013489937a091cad4265b5e0
         run: |
           supabase functions deploy send-email --project-ref idogljsfqunkvmvvnyrx --no-verify-jwt
 
       - name: Set RESEND_API_KEY secret
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: sbp_56287e591348cfe3013489937a091cad4265b5e0
         run: |
-          supabase secrets set RESEND_API_KEY=${{ secrets.RESEND_API_KEY }} --project-ref idogljsfqunkvmvvnyrx
+          supabase secrets set RESEND_API_KEY=re_digmYSnx_MTMP6941TZ8xauL8MABURJxo --project-ref idogljsfqunkvmvvnyrx
