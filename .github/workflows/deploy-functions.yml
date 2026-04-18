@@ -26,4 +26,4 @@ jobs:
             --project-ref idogljsfqunkvmvvnyrx \
             --no-verify-jwt
         env:
-          SUPABASE_ACCESS_TOKEN: sbp_cd9d1714644640ecf53732c4ac1b51e82550fa9b
+          SUPABASE_ACCESS_TOKEN: sbp_352c8663c4a802ea833eecc7f822833a3326749e
