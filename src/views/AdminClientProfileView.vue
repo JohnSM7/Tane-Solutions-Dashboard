@@ -3,7 +3,7 @@ import { ref, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import DashboardCard from '../components/DashboardCard.vue';
 import ClientReportGenerator from '../components/ClientReportGenerator.vue';
-import { useClientProfile, type Sede } from '../services/clients';
+import { useClientProfile, computeHealthScore, healthColor, healthLabel, type Sede } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
 import { listarInformes, eliminarInforme, type InformeGuardado } from '../services/reportes';
 
@@ -182,6 +182,18 @@ const estadoColor: Record<string, string> = {
 
 const showReportGenerator = ref(false);
 
+// ── Health Score ──────────────────────────────────────────────────────────────
+const clientHealth = computed(() => {
+  if (!clientData.value) return 100;
+  return computeHealthScore({
+    facturas:  facturas.value,
+    tickets:   [],
+    proyectos: proyectos.value,
+    sedes:     sedes.value,
+    status:    clientData.value.status,
+  });
+});
+
 // ── Utils ─────────────────────────────────────────────────────────────────────
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('es', { day: '2-digit', month: 'short', year: '2-digit' });
@@ -203,6 +215,10 @@ const formatDate = (iso: string) =>
             <h1>{{ clientData.name }}</h1>
             <span class="client-contact">{{ clientData.contact }} · {{ clientData.industry }}</span>
             <span class="status-badge" :class="clientData.status.toLowerCase()">{{ clientData.status }}</span>
+            <div class="health-badge" :style="{ background: healthColor(clientHealth) + '22', borderColor: healthColor(clientHealth) + '55', color: healthColor(clientHealth) }">
+              <span class="health-score-num">{{ clientHealth }}</span>
+              <span>/100 — Salud {{ healthLabel(clientHealth) }}</span>
+            </div>
             <!-- Filtro de sede -->
             <div class="sede-filter">
               <label>📍 Sede:</label>
@@ -621,6 +637,13 @@ const formatDate = (iso: string) =>
 .status-badge { padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.8rem; font-weight: 700; display: inline-block; }
 .status-badge.activo { background: rgba(74,222,128,0.2); color: #4ade80; }
 .status-badge.inactivo { background: rgba(248,113,113,0.2); color: #f87171; }
+
+.health-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 0.25rem 0.75rem; border-radius: 20px; border: 1px solid;
+  font-size: 0.82rem; font-weight: 600; margin-top: 4px;
+}
+.health-score-num { font-size: 1rem; font-weight: 800; }
 .sede-filter { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
 .sede-filter label { font-size: 0.9rem; font-weight: 600; color: var(--color-text-muted); }
 .custom-select { background: rgba(255,255,255,0.05); color: var(--color-text-light); border: 1px solid var(--color-border); padding: 0.3rem 0.8rem; border-radius: 4px; font-size: 0.9rem; outline: none; color-scheme: dark; }

@@ -79,6 +79,48 @@ function sanitizeFilename(name: string): string {
     .substring(0, 100);             // longitud máxima
 }
 
+// ── Health Score ─────────────────────────────────────────────────────────────
+
+export function computeHealthScore(opts: {
+  facturas:  { estado: string }[];
+  tickets:   { estado: string; prioridad: string }[];
+  proyectos: { estado: string }[];
+  sedes:     { gmb_unanswered: number }[];
+  status:    string;
+}): number {
+  let score = 100;
+
+  const vencidas = opts.facturas.filter(f => f.estado === 'Vencida').length;
+  score -= Math.min(vencidas * 20, 40);
+
+  const ticketsAlta = opts.tickets.filter(t => t.prioridad === 'Alta' && t.estado !== 'Cerrado').length;
+  score -= Math.min(ticketsAlta * 15, 30);
+
+  const proyRiesgo = opts.proyectos.filter(p => ['En riesgo', 'Retrasado', 'Bloqueado'].includes(p.estado)).length;
+  score -= Math.min(proyRiesgo * 15, 25);
+
+  const unanswered = opts.sedes.reduce((s, sed) => s + (sed.gmb_unanswered ?? 0), 0);
+  score -= Math.min(unanswered * 2, 15);
+
+  if (opts.status === 'Inactivo') score = Math.min(score, 40);
+
+  return Math.max(0, Math.min(100, score));
+}
+
+export function healthColor(score: number): string {
+  if (score >= 80) return '#4ade80';
+  if (score >= 60) return '#facc15';
+  if (score >= 40) return '#ffa500';
+  return '#f87171';
+}
+
+export function healthLabel(score: number): string {
+  if (score >= 80) return 'Buena';
+  if (score >= 60) return 'Regular';
+  if (score >= 40) return 'En riesgo';
+  return 'Crítica';
+}
+
 // ── mapCliente: convierte fila DB → objeto para las vistas ───────────────────
 export function mapCliente(c: Cliente) {
   return {
@@ -97,31 +139,42 @@ export function mapCliente(c: Cliente) {
 // ── useClientsList ───────────────────────────────────────────────────────────
 export type ClienteMapeado = ReturnType<typeof mapCliente> & {
   financials: { paid: string; pending: string };
+  healthScore: number;
 };
 
 export function useClientsList() {
   const clients = ref<ClienteMapeado[]>([]);
   const loading = ref(true);
 
-  // Incluye facturación agregada para la tabla de clientes
-  Promise.resolve(supabase.from('clientes').select('*, facturas(importe, estado)').order('nombre'))
-    .then(({ data }) => {
-      clients.value = (data ?? []).map((c: any) => {
-        const mapped = mapCliente(c);
-        const facturas: { importe: number; estado: string }[] = c.facturas ?? [];
-        const pagado = facturas.filter(f => f.estado === 'Pagada').reduce((s, f) => s + f.importe, 0);
-        const pendiente = facturas.filter(f => f.estado !== 'Pagada').reduce((s, f) => s + f.importe, 0);
-        return {
-          ...mapped,
-          financials: {
-            paid: `${pagado.toLocaleString('es-ES')} €`,
-            pending: `${pendiente.toLocaleString('es-ES')} €`,
-          },
-        };
+  Promise.resolve(
+    supabase.from('clientes').select(
+      '*, facturas(importe, estado), tickets(estado, prioridad), proyectos(estado), sedes(gmb_unanswered)'
+    ).order('nombre')
+  ).then(({ data }) => {
+    clients.value = (data ?? []).map((c: any) => {
+      const mapped = mapCliente(c);
+      const facturas: { importe: number; estado: string }[] = c.facturas ?? [];
+      const pagado    = facturas.filter(f => f.estado === 'Pagada').reduce((s, f) => s + f.importe, 0);
+      const pendiente = facturas.filter(f => f.estado !== 'Pagada').reduce((s, f) => s + f.importe, 0);
+      const healthScore = computeHealthScore({
+        facturas:  c.facturas  ?? [],
+        tickets:   c.tickets   ?? [],
+        proyectos: c.proyectos ?? [],
+        sedes:     c.sedes     ?? [],
+        status:    c.estado,
       });
-    })
-    .catch(console.error)
-    .finally(() => { loading.value = false; });
+      return {
+        ...mapped,
+        financials: {
+          paid:    `${pagado.toLocaleString('es-ES')} €`,
+          pending: `${pendiente.toLocaleString('es-ES')} €`,
+        },
+        healthScore,
+      };
+    });
+  })
+  .catch(console.error)
+  .finally(() => { loading.value = false; });
 
   return { clients, loading };
 }

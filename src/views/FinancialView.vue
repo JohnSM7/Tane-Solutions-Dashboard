@@ -11,6 +11,7 @@ import {
 } from '../services/financial';
 import { useClientsList } from '../services/clients';
 import { exportCsv } from '../utils/exportCsv';
+import { supabase } from '../supabase';
 
 const { facturas, proyectos, proyectosConFacturas, kpis, monthlyBilling, loading } = useFinancialData();
 const { clients } = useClientsList();
@@ -270,6 +271,17 @@ const cashFlow = computed(() => {
 
 const cashFlowMax = computed(() => Math.max(...cashFlow.value.map(m => m.total), 1));
 
+// ── CAC por cliente (leads ganados) ──────────────────────────────────────────
+const cacPorCliente = ref<Map<string, number>>(new Map());
+supabase.from('leads').select('cliente_id, cac').eq('estado', 'Cerrado-Ganado').then(({ data }) => {
+  const map = new Map<string, number>();
+  for (const l of (data ?? []) as any[]) {
+    if (!l.cliente_id) continue;
+    map.set(l.cliente_id, (map.get(l.cliente_id) ?? 0) + (l.cac ?? 0));
+  }
+  cacPorCliente.value = map;
+});
+
 // ── Rentabilidad por cliente ──────────────────────────────────────────────────
 const rentabilidadClientes = computed(() => {
   const map = new Map<string, {
@@ -298,15 +310,21 @@ const rentabilidadClientes = computed(() => {
   }
 
   return [...map.entries()]
-    .map(([id, d]) => ({
-      id,
-      nombre: d.nombre,
-      facturado: d.facturado,
-      cobrado: d.cobrado,
-      pendiente: d.facturado - d.cobrado,
-      coste: d.coste,
-      margen: d.facturado > 0 ? Math.round((d.facturado - d.coste) / d.facturado * 100) : 0,
-    }))
+    .map(([id, d]) => {
+      const cac = cacPorCliente.value.get(id) ?? 0;
+      const costoTotal = d.coste + cac;
+      return {
+        id,
+        nombre: d.nombre,
+        facturado: d.facturado,
+        cobrado: d.cobrado,
+        pendiente: d.facturado - d.cobrado,
+        coste: d.coste,
+        cac,
+        costoTotal,
+        margen: d.facturado > 0 ? Math.round((d.facturado - costoTotal) / d.facturado * 100) : 0,
+      };
+    })
     .sort((a, b) => b.facturado - a.facturado);
 });
 </script>
@@ -510,7 +528,8 @@ const rentabilidadClientes = computed(() => {
             <span class="ta-r">Facturado</span>
             <span class="ta-r">Cobrado</span>
             <span class="ta-r">Pendiente</span>
-            <span class="ta-r">Coste est.</span>
+            <span class="ta-r">Coste</span>
+            <span class="ta-r">CAC</span>
             <span class="ta-r">Margen</span>
           </div>
           <div v-for="row in rentabilidadClientes" :key="row.id" class="rent-row">
@@ -519,6 +538,7 @@ const rentabilidadClientes = computed(() => {
             <span class="ta-r" style="color:#4ade80">{{ formatEur(row.cobrado) }}</span>
             <span class="ta-r" :style="{ color: row.pendiente > 0 ? '#ffa500' : 'inherit' }">{{ formatEur(row.pendiente) }}</span>
             <span class="ta-r muted">{{ formatEur(row.coste) }}</span>
+            <span class="ta-r muted">{{ row.cac > 0 ? formatEur(row.cac) : '—' }}</span>
             <span class="ta-r">
               <span class="margen-pill" :class="{ high: row.margen >= 50, mid: row.margen >= 30 && row.margen < 50, low: row.margen < 30 }">
                 {{ row.margen }}%

@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import DashboardCard from '../components/DashboardCard.vue';
-import { useClientsList, createClient, deleteClient } from '../services/clients';
+import { useClientsList, createClient, deleteClient, healthColor, healthLabel } from '../services/clients';
 
 const router = useRouter();
 const { clients, loading } = useClientsList();
@@ -43,7 +43,7 @@ const saveClient = async () => {
   saving.value = true;
   try {
     const newClient = await createClient(form.value);
-    clients.value.unshift({ ...newClient, financials: { paid: '0 €', pending: '0 €' } });
+    clients.value.unshift({ ...newClient, financials: { paid: '0 €', pending: '0 €' }, healthScore: 100 });
     showModal.value = false;
   } catch (e: any) {
     errorMsg.value = e.message ?? 'Error al guardar';
@@ -91,6 +91,7 @@ const confirmDeleteClient = async (c: typeof clients.value[0]) => {
               <th>Contacto</th>
               <th>Cobrado</th>
               <th>Pendiente</th>
+              <th>Salud</th>
               <th>Estado</th>
               <th>Acciones</th>
             </tr>
@@ -111,6 +112,16 @@ const confirmDeleteClient = async (c: typeof clients.value[0]) => {
               </td>
               <td data-label="Cobrado" class="text-success">{{ client.financials?.paid ?? '—' }}</td>
               <td data-label="Pendiente" class="text-warning">{{ client.financials?.pending ?? '—' }}</td>
+              <td data-label="Salud">
+                <div class="health-cell">
+                  <div class="health-bar-bg">
+                    <div class="health-bar" :style="{ width: client.healthScore + '%', background: healthColor(client.healthScore) }"></div>
+                  </div>
+                  <span class="health-label" :style="{ color: healthColor(client.healthScore) }">
+                    {{ client.healthScore }} — {{ healthLabel(client.healthScore) }}
+                  </span>
+                </div>
+              </td>
               <td data-label="Estado">
                 <span class="status-badge" :class="client.status.toLowerCase()">{{ client.status }}</span>
               </td>
@@ -215,6 +226,11 @@ const confirmDeleteClient = async (c: typeof clients.value[0]) => {
 .status-badge { padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; font-weight: 600; }
 .status-badge.activo { background: rgba(74,222,128,0.2); color: #4ade80; }
 .status-badge.inactivo { background: rgba(248,113,113,0.2); color: #f87171; }
+
+.health-cell { display: flex; flex-direction: column; gap: 4px; min-width: 110px; }
+.health-bar-bg { height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; }
+.health-bar    { height: 4px; border-radius: 2px; transition: width 0.4s; }
+.health-label  { font-size: 0.75rem; font-weight: 600; }
 
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 1000; }
 .modal-box { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 12px; padding: 2rem; width: 90%; max-width: 540px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
