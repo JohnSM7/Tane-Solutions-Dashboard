@@ -7,7 +7,8 @@ import { useClientProfile } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
 import { listarInformes, type InformeGuardado } from '../services/reportes';
 import { generateInvoicePDF, type Factura } from '../services/financial';
-import { createTicket, useClientTickets } from '../services/support';
+import { createTicket, updateTicket, useClientTickets } from '../services/support';
+import { supabase } from '../supabase';
 import { useToast } from '../composables/useToast';
 
 const clientId = authStore.user?.clientId ?? '';
@@ -19,7 +20,7 @@ const {
 
 const toast = useToast();
 
-const { tickets: misTickets } = useClientTickets(clientId);
+const { tickets: misTickets, reload: reloadTickets } = useClientTickets(clientId);
 
 const PROGRESO_ESTADO: Record<string, number> = {
   'Planificado': 5, 'En curso': 50, 'En riesgo': 40,
@@ -101,11 +102,24 @@ const submitTicket = async () => {
       estado:      'Abierto',
     });
     showTicketModal.value = false;
+    await reloadTickets();
     toast.success('Tu solicitud de soporte ha sido enviada. Te responderemos pronto.');
   } catch {
     toast.error('No se pudo enviar la solicitud. Inténtalo de nuevo.');
   } finally {
     savingTicket.value = false;
+  }
+};
+
+// ── Valorar ticket cerrado ────────────────────────────────────────────────────
+const setSatisfaccion = async (ticketId: number, stars: number) => {
+  try {
+    const updated = await updateTicket(ticketId, { satisfaccion: stars });
+    const idx = misTickets.value.findIndex(t => t.id === ticketId);
+    if (idx !== -1) misTickets.value[idx] = { ...misTickets.value[idx], ...updated };
+    toast.success('Gracias por tu valoración');
+  } catch {
+    toast.error('No se pudo guardar la valoración');
   }
 };
 
@@ -124,6 +138,17 @@ const handleSaveProfile = async () => {
   await saveProfile(editForm.value);
   savingProfile.value = false;
   showEditModal.value = false;
+};
+
+// ── Download documentos ───────────────────────────────────────────────────────
+const downloadDoc = async (url: string, nombre: string) => {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = nombre;
+  a.click();
+  URL.revokeObjectURL(a.href);
 };
 
 // ── Upload documentos ─────────────────────────────────────────────────────────
@@ -148,6 +173,12 @@ const handleFileChange = async (e: Event) => {
     if (fileInput.value) fileInput.value.value = '';
   }
 };
+
+// ── Links compartidos ─────────────────────────────────────────────────────────
+type LinkCliente = { id: string; titulo: string; url: string; descripcion: string | null };
+const links = ref<LinkCliente[]>([]);
+supabase.from('links_cliente').select('*').eq('cliente_id', clientId).order('created_at', { ascending: false })
+  .then(({ data }) => { links.value = (data ?? []) as LinkCliente[]; });
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('es', { day: '2-digit', month: 'short', year: '2-digit' });
@@ -185,7 +216,11 @@ const estadoColor: Record<string, string> = {
 
 <template>
   <div class="view-container">
-    <div v-if="loading" class="loading-state">Cargando tu panel...</div>
+    <div v-if="!clientId" class="loading-state" style="text-align:center;padding:3rem;">
+      <h2 style="color:#ffa500;margin-bottom:1rem;">⚠️ Tu usuario no tiene cliente asignado</h2>
+      <p style="color:var(--color-text-muted);">Tu cuenta aún no está vinculada a ningún cliente.<br/>Contacta con la agencia en <a href="mailto:info@tanesolutions.com" style="color:var(--color-primary);">info@tanesolutions.com</a> para resolverlo.</p>
+    </div>
+    <div v-else-if="loading" class="loading-state">Cargando tu panel...</div>
 
     <template v-else-if="clientData">
       <!-- Cabecera de bienvenida -->
@@ -306,11 +341,25 @@ const estadoColor: Record<string, string> = {
                   </span>
                 </div>
               </div>
-              <a :href="doc.url" target="_blank" class="btn-view">👀 Ver</a>
+              <button class="btn-view" @click="downloadDoc(doc.url, doc.nombre)">⬇️ Descargar</button>
             </li>
           </ul>
         </DashboardCard>
       </div>
+
+      <!-- Links compartidos -->
+      <DashboardCard v-if="links.length > 0" title="Links Compartidos">
+        <ul class="links-list">
+          <li v-for="l in links" :key="l.id" class="link-item">
+            <span class="link-icon">🔗</span>
+            <div class="link-meta">
+              <span class="link-titulo">{{ l.titulo }}</span>
+              <span v-if="l.descripcion" class="link-desc">{{ l.descripcion }}</span>
+            </div>
+            <a :href="l.url" target="_blank" rel="noopener" class="btn-view">Abrir ↗</a>
+          </li>
+        </ul>
+      </DashboardCard>
 
       <!-- Módulo de Informes de Trabajo -->
       <ClientReportModule
@@ -327,7 +376,7 @@ const estadoColor: Record<string, string> = {
         </template>
         <div v-if="misTickets.length === 0" class="empty-state-small">No tienes solicitudes de soporte abiertas.</div>
         <ul v-else class="tickets-list">
-          <li v-for="t in misTickets" :key="t.id" class="ticket-row">
+          <li v-for="t in misTickets" :key="t.id" class="ticket-row" :class="{ 'ticket-closed': t.estado === 'Cerrado' }">
             <div class="ticket-info">
               <span class="ticket-asunto">{{ t.asunto }}</span>
               <span class="ticket-fecha">{{ formatDate(t.fecha_creacion) }}</span>
@@ -335,6 +384,22 @@ const estadoColor: Record<string, string> = {
             <span class="ticket-badge" :style="{ color: TICKET_COLOR[t.estado], borderColor: TICKET_COLOR[t.estado] + '55' }">
               {{ t.estado }}
             </span>
+            <!-- Respuesta del equipo al cerrar -->
+            <div v-if="t.estado === 'Cerrado' && t.respuesta_cierre" class="ticket-resolucion">
+              <span class="ticket-resolucion-label">Resolución:</span>
+              {{ t.respuesta_cierre }}
+            </div>
+            <!-- Valoración del cliente -->
+            <div v-if="t.estado === 'Cerrado'" class="ticket-rating">
+              <span class="ticket-rating-label">{{ t.satisfaccion ? 'Tu valoración:' : 'Valora la atención:' }}</span>
+              <span
+                v-for="star in 5"
+                :key="star"
+                class="star"
+                :class="{ active: star <= (t.satisfaccion ?? 0), readonly: !!t.satisfaccion }"
+                @click="!t.satisfaccion && setSatisfaccion(t.id, star)"
+              >★</span>
+            </div>
           </li>
         </ul>
       </DashboardCard>
@@ -398,7 +463,7 @@ const estadoColor: Record<string, string> = {
     </template>
 
     <!-- Modal: Detalle del Informe -->
-    <div v-if="selectedInforme" class="modal-overlay report-detail-overlay" @click.self="selectedInforme = null">
+    <div v-if="selectedInforme" class="modal-overlay report-detail-overlay">
       <div class="modal-box report-modal">
         <div class="report-modal-header">
           <div class="report-modal-title">
@@ -483,7 +548,7 @@ const estadoColor: Record<string, string> = {
     <div v-else class="loading-state">No se encontró tu perfil. Contacta con la agencia.</div>
 
     <!-- Modal: Abrir ticket de soporte -->
-    <div class="modal-overlay" v-if="showTicketModal" @click.self="showTicketModal = false">
+    <div class="modal-overlay" v-if="showTicketModal">
       <div class="modal-box">
         <p class="modal-title">✉ Solicitud de Soporte</p>
         <p class="modal-subtitle">Describe tu consulta y nos pondremos en contacto contigo lo antes posible.</p>
@@ -513,7 +578,7 @@ const estadoColor: Record<string, string> = {
     </div>
 
     <!-- Modal: Editar perfil -->
-    <div class="modal-overlay" v-if="showEditModal" @click.self="showEditModal = false">
+    <div class="modal-overlay" v-if="showEditModal">
       <div class="modal-box">
         <p class="modal-title">Editar Mi Perfil</p>
         <div class="form-group"><label>Nombre de empresa</label><input v-model="editForm.name" class="form-input" /></div>
@@ -633,6 +698,15 @@ const estadoColor: Record<string, string> = {
 .ticket-asunto { font-size: 0.9rem; font-weight: 600; }
 .ticket-fecha  { font-size: 0.75rem; color: var(--color-text-muted); }
 .ticket-badge  { font-size: 0.72rem; font-weight: 600; padding: 2px 10px; border-radius: 10px; border: 1px solid; white-space: nowrap; flex-shrink: 0; }
+.ticket-closed { flex-wrap: wrap; align-items: flex-start; }
+.ticket-resolucion { width: 100%; margin-top: 0.4rem; padding: 0.5rem 0.75rem; background: rgba(255,255,255,0.05); border-left: 3px solid #4ade80; border-radius: 0 6px 6px 0; font-size: 0.82rem; color: var(--color-text-light); line-height: 1.4; }
+.ticket-resolucion-label { font-weight: 700; color: #4ade80; margin-right: 0.4rem; }
+.ticket-rating { width: 100%; margin-top: 0.35rem; display: flex; align-items: center; gap: 0.25rem; }
+.ticket-rating-label { font-size: 0.78rem; color: var(--color-text-muted); margin-right: 0.2rem; }
+.star { font-size: 1.2rem; color: #555; cursor: pointer; transition: color 0.15s, transform 0.1s; line-height: 1; }
+.star.active { color: #fbbf24; }
+.star:not(.readonly):hover { color: #fbbf24; transform: scale(1.2); }
+.star.readonly { cursor: default; }
 .empty-state-small { color: var(--color-text-muted); font-size: 0.85rem; padding: 0.5rem 0; }
 .status-pill { font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 10px; border: 1px solid; flex-shrink: 0; }
 
@@ -650,7 +724,14 @@ const estadoColor: Record<string, string> = {
 .doc-name { font-weight: 600; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .doc-details { font-size: 0.78rem; color: var(--color-text-muted); }
 .text-primary { color: var(--color-primary); }
-.btn-view { background: var(--color-primary); color: #000; padding: 0.35rem 0.8rem; border-radius: 4px; font-weight: 600; font-size: 0.82rem; text-decoration: none; flex-shrink: 0; }
+.btn-view { background: var(--color-primary); color: #000; padding: 0.35rem 0.8rem; border-radius: 4px; font-weight: 600; font-size: 0.82rem; text-decoration: none; flex-shrink: 0; cursor: pointer; border: none; }
+.links-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0; }
+.link-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.9rem 0.5rem; border-bottom: 1px solid var(--color-border); }
+.link-item:last-child { border-bottom: none; }
+.link-icon { font-size: 1.2rem; flex-shrink: 0; }
+.link-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.link-titulo { font-weight: 600; font-size: 0.9rem; }
+.link-desc { font-size: 0.8rem; color: var(--color-text-muted); }
 
 .section-title { font-size: 1.2rem; color: var(--color-text-muted); margin-bottom: 1rem; }
 .gmb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; }

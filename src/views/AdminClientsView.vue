@@ -3,6 +3,8 @@ import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import DashboardCard from '../components/DashboardCard.vue';
 import { useClientsList, createClient, deleteClient, healthColor, healthLabel } from '../services/clients';
+import { crearUsuario } from '../services/adminUsuarios';
+import { supabase } from '../supabase';
 
 const router = useRouter();
 const { clients, loading } = useClientsList();
@@ -26,25 +28,142 @@ const filteredClients = computed(() =>
 const showModal = ref(false);
 const saving = ref(false);
 const errorMsg = ref('');
+const successMsg = ref('');
+
+function showSuccess(msg: string) {
+  successMsg.value = msg;
+  setTimeout(() => { successMsg.value = ''; }, 4000);
+}
 
 const form = ref({
   name: '', contact: '', contactEmail: '', industry: '', status: 'Activo', logo: '',
   cif: '', direccionFacturacion: '',
 });
 
+const ITEMS_PREDEFINIDOS = [
+  'Logo en alta resolución (SVG / PNG)',
+  'Fotografías del negocio / producto',
+  'Acceso a redes sociales (usuario + contraseña)',
+  'Dominio y accesos de hosting',
+  'Paleta de colores y tipografías',
+  'Textos para las secciones (About, Servicios...)',
+  'NIF / CIF para facturación',
+  'Briefing del proyecto',
+] as const;
+
+const emailConfig = ref({
+  enviar: false,
+  mensaje: '',
+  checklist: [] as string[],
+  nuevoItem: '',
+});
+
+const toggleChecklistItem = (item: string) => {
+  const idx = emailConfig.value.checklist.indexOf(item);
+  if (idx === -1) emailConfig.value.checklist.push(item);
+  else emailConfig.value.checklist.splice(idx, 1);
+};
+
+const addCustomItem = () => {
+  const item = emailConfig.value.nuevoItem.trim();
+  if (item && !emailConfig.value.checklist.includes(item)) {
+    emailConfig.value.checklist.push(item);
+  }
+  emailConfig.value.nuevoItem = '';
+};
+
+// ── Autocomplete nombre empresa ───────────────────────────────────────────────
+const showNameDropdown = ref(false);
+
+const sugerenciasNombre = computed(() => {
+  const q = (form.value.name ?? '').toLowerCase().trim();
+  if (!q) return clients.value.map(c => c.name);
+  return clients.value.map(c => c.name).filter(n => n.toLowerCase().includes(q));
+});
+
+const clienteYaExiste = computed(() =>
+  clients.value.some(c => c.name.toLowerCase() === (form.value.name ?? '').toLowerCase().trim())
+);
+
+const seleccionarNombre = (nombre: string) => {
+  form.value.name = nombre;
+  showNameDropdown.value = false;
+};
+
+const hideNameDropdown = () => setTimeout(() => { showNameDropdown.value = false; }, 150);
+
 const openModal = () => {
   form.value = { name: '', contact: '', contactEmail: '', industry: '', status: 'Activo', logo: '', cif: '', direccionFacturacion: '' };
+  emailConfig.value = { enviar: false, mensaje: '', checklist: [], nuevoItem: '' };
   errorMsg.value = '';
+  showNameDropdown.value = false;
   showModal.value = true;
 };
 
 const saveClient = async () => {
   errorMsg.value = '';
+  if (clienteYaExiste.value) {
+    errorMsg.value = 'Ya existe un cliente con ese nombre. Usa un nombre diferente o edita el existente.';
+    return;
+  }
   saving.value = true;
   try {
     const newClient = await createClient(form.value);
     clients.value.unshift({ ...newClient, financials: { paid: '0 €', pending: '0 €' }, healthScore: 100 });
-    showModal.value = false;
+
+    if (emailConfig.value.enviar && form.value.contactEmail) {
+      // 1. Crear usuario en Supabase Auth vinculado al cliente
+      let setupLink: string | null = null;
+      try {
+        const redirectTo = 'https://clientes.tanesolutions.com/update-password';
+        const result = await crearUsuario({
+          email: form.value.contactEmail,
+          nombre: form.value.contact,
+          rol: 'CLIENT',
+          cliente_id: newClient.id,
+          redirectTo,
+        });
+        setupLink = result.setupLink;
+      } catch (userErr: any) {
+        // Mostrar aviso pero no bloquear — el cliente ya está creado
+        errorMsg.value = `Cliente creado, pero no se pudo crear el usuario: ${userErr.message}`;
+        console.warn('[saveClient] crearUsuario falló:', userErr.message);
+      }
+
+      // 2. Enviar email de bienvenida con link de activación
+      try {
+        const { data: emailData, error: emailError } = await supabase.functions.invoke('send-email', {
+          body: {
+            type: 'welcome',
+            nombre: form.value.contact,
+            email: form.value.contactEmail,
+            setupLink,
+            loginUrl: 'https://clientes.tanesolutions.com/login-cliente',
+            mensaje: emailConfig.value.mensaje,
+            checklist: emailConfig.value.checklist,
+          },
+        });
+        if (emailError) {
+          console.warn('[send-email] error de red:', emailError.message);
+          errorMsg.value = `Usuario creado. Email no enviado: ${emailError.message}`;
+        } else if (emailData && !emailData.success) {
+          const detail = emailData.error ?? JSON.stringify(emailData.details ?? '');
+          console.warn('[send-email] Resend rechazó:', detail);
+          errorMsg.value = `Usuario creado. Email no enviado: ${detail}`;
+        }
+      } catch (emailErr: any) {
+        console.warn('[send-email] excepción:', emailErr.message);
+      }
+    }
+
+    if (!errorMsg.value) {
+      const emailEnviado = emailConfig.value.enviar && form.value.contactEmail;
+      showModal.value = false;
+      showSuccess(emailEnviado
+        ? `✓ Cliente y usuario creados. Email de bienvenida enviado a ${form.value.contactEmail}`
+        : `✓ Cliente creado correctamente`
+      );
+    }
   } catch (e: any) {
     errorMsg.value = e.message ?? 'Error al guardar';
   } finally {
@@ -67,6 +186,10 @@ const confirmDeleteClient = async (c: typeof clients.value[0]) => {
       <h1>Clientes</h1>
       <span class="subtitle">Gestión Integral de Perfiles CRM</span>
     </div>
+
+    <transition name="toast">
+      <div v-if="successMsg" class="success-toast">{{ successMsg }}</div>
+    </transition>
 
     <div class="filters-container">
       <input v-model="searchQuery" type="text" placeholder="Buscar por nombre o contacto..." class="search-input" />
@@ -138,14 +261,33 @@ const confirmDeleteClient = async (c: typeof clients.value[0]) => {
     </DashboardCard>
 
     <!-- Modal: Añadir Cliente -->
-    <div class="modal-overlay" v-if="showModal" @click.self="showModal = false">
+    <div class="modal-overlay" v-if="showModal">
       <div class="modal-box">
         <p class="modal-title">Nuevo Cliente</p>
 
         <div class="form-row">
-          <div class="form-group">
+          <div class="form-group" style="position:relative;">
             <label>Nombre de empresa *</label>
-            <input v-model="form.name" class="form-input" placeholder="Bar La Flecha" />
+            <input
+              v-model="form.name"
+              class="form-input"
+              :class="{ 'input-error': clienteYaExiste }"
+              placeholder="Bar La Flecha"
+              autocomplete="off"
+              @focus="showNameDropdown = true"
+              @blur="hideNameDropdown"
+            />
+            <p v-if="clienteYaExiste" class="field-error">Ya existe un cliente con este nombre.</p>
+            <ul v-if="showNameDropdown && sugerenciasNombre.length" class="name-dropdown">
+              <li
+                v-for="nombre in sugerenciasNombre"
+                :key="nombre"
+                class="name-dropdown-item existing"
+                @mousedown.prevent="seleccionarNombre(nombre)"
+              >
+                ⚠️ {{ nombre }} <span class="exists-tag">ya existe</span>
+              </li>
+            </ul>
           </div>
           <div class="form-group">
             <label>Sector / Industria</label>
@@ -184,6 +326,67 @@ const confirmDeleteClient = async (c: typeof clients.value[0]) => {
         <div class="form-group">
           <label>Dirección de facturación</label>
           <input v-model="form.direccionFacturacion" class="form-input" placeholder="Calle Ejemplo, 1, 28001 Madrid" />
+        </div>
+
+        <!-- Email de bienvenida -->
+        <div class="email-section">
+          <div class="email-section-header">
+            <span class="section-label">Email de bienvenida</span>
+            <label class="toggle-row">
+              <input type="checkbox" v-model="emailConfig.enviar" :disabled="!form.contactEmail" />
+              <span>Enviar email al contacto</span>
+            </label>
+          </div>
+          <p v-if="!form.contactEmail" class="field-hint" style="margin:0.25rem 0 0;">Introduce un email de contacto para activar esta opción.</p>
+
+          <template v-if="emailConfig.enviar && form.contactEmail">
+            <div class="form-group" style="margin-top:0.75rem;">
+              <label>Mensaje personalizado (opcional)</label>
+              <textarea
+                v-model="emailConfig.mensaje"
+                class="form-input"
+                rows="2"
+                placeholder="Estamos encantados de comenzar este proyecto contigo..."
+                style="resize:vertical;"
+              ></textarea>
+            </div>
+
+            <div class="form-group">
+              <label>Materiales / documentación necesaria para el proyecto</label>
+              <div class="checklist-presets">
+                <button
+                  v-for="item in ITEMS_PREDEFINIDOS"
+                  :key="item"
+                  type="button"
+                  class="preset-chip"
+                  :class="{ active: emailConfig.checklist.includes(item) }"
+                  @click="toggleChecklistItem(item)"
+                >
+                  <span class="chip-icon">{{ emailConfig.checklist.includes(item) ? '✓' : '+' }}</span>
+                  {{ item }}
+                </button>
+              </div>
+              <div class="custom-item-row">
+                <input
+                  v-model="emailConfig.nuevoItem"
+                  class="form-input"
+                  placeholder="Añadir elemento personalizado..."
+                  @keydown.enter.prevent="addCustomItem"
+                />
+                <button class="btn-add-item" type="button" @click="addCustomItem">+</button>
+              </div>
+              <div v-if="emailConfig.checklist.length" class="checklist-summary">
+                <p class="checklist-summary-title">Elementos en el email:</p>
+                <ul class="checklist-summary-list">
+                  <li v-for="item in emailConfig.checklist" :key="item" class="checklist-summary-item">
+                    <span>{{ item }}</span>
+                    <button type="button" @click="emailConfig.checklist = emailConfig.checklist.filter(i => i !== item)">×</button>
+                  </li>
+                </ul>
+                <button type="button" class="btn-clear" @click="emailConfig.checklist = []">Limpiar todo</button>
+              </div>
+            </div>
+          </template>
         </div>
 
         <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
@@ -245,6 +448,44 @@ const confirmDeleteClient = async (c: typeof clients.value[0]) => {
 .btn-text { background: transparent; border: none; color: var(--color-primary); cursor: pointer; font-size: 0.9rem; }
 .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 .error-msg { color: #ff4444; font-size: 0.9rem; margin-bottom: 0.5rem; }
+
+/* Email section */
+.email-section { border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: rgba(227,255,4,0.03); }
+.email-section-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.section-label { font-size: 0.8rem; font-weight: 700; color: var(--color-primary); text-transform: uppercase; letter-spacing: 0.06em; }
+.toggle-row { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; color: var(--color-text-muted); cursor: pointer; }
+.toggle-row input[type="checkbox"] { accent-color: var(--color-primary); cursor: pointer; }
+.field-hint { font-size: 0.78rem; color: var(--color-text-muted); }
+.field-error { font-size: 0.78rem; color: #f87171; margin: 0.25rem 0 0; }
+.input-error { border-color: #f87171 !important; }
+.name-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 6px; margin-top: 2px; z-index: 100; list-style: none; padding: 0; max-height: 180px; overflow-y: auto; box-shadow: 0 6px 20px rgba(0,0,0,0.4); }
+.name-dropdown-item { padding: 0.6rem 1rem; cursor: pointer; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem; }
+.name-dropdown-item:hover { background: rgba(255,255,255,0.06); }
+.exists-tag { font-size: 0.72rem; background: rgba(248,113,113,0.15); color: #f87171; padding: 0.1rem 0.4rem; border-radius: 4px; margin-left: auto; }
+.checklist-presets { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+.preset-chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.3rem 0.7rem; border-radius: 20px; border: 1px solid var(--color-border); background: var(--color-bg-lighter); color: var(--color-text-muted); font-size: 0.78rem; cursor: pointer; transition: all 0.15s; }
+.preset-chip:hover { border-color: var(--color-primary); color: var(--color-text-light); }
+.preset-chip.active { border-color: var(--color-primary); background: rgba(227,255,4,0.1); color: var(--color-primary); font-weight: 600; }
+.chip-icon { font-weight: 700; }
+.custom-item-row { display: flex; gap: 0.5rem; align-items: center; }
+.btn-add-item { flex-shrink: 0; width: 36px; height: 36px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-bg-lighter); color: var(--color-primary); font-size: 1.3rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.btn-add-item:hover { border-color: var(--color-primary); background: rgba(227,255,4,0.08); }
+.checklist-summary { display: flex; flex-direction: column; margin-top: 0.5rem; gap: 0.25rem; }
+.btn-clear { background: none; border: none; color: #f87171; font-size: 0.78rem; cursor: pointer; padding: 0; align-self: flex-start; }
+.checklist-summary-title { font-size: 0.75rem; color: #999; margin: 0 0 0.4rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.checklist-summary-list { list-style: none; padding: 0; margin: 0 0 0.5rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.checklist-summary-item { display: flex; align-items: center; justify-content: space-between; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.82rem; color: #d4d4d4; }
+.checklist-summary-item button { background: none; border: none; color: #666; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0 0 0.5rem; }
+.checklist-summary-item button:hover { color: #ff4444; }
+
+.success-toast {
+  position: fixed; top: 1.5rem; right: 1.5rem; z-index: 2000;
+  background: #1a1a1a; border: 1px solid #4ade80; border-radius: 8px;
+  padding: 0.9rem 1.4rem; color: #4ade80; font-size: 0.9rem; font-weight: 600;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+.toast-enter-active, .toast-leave-active { transition: all 0.3s ease; }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(-12px); }
 
 @media (max-width: 768px) {
   .filters-container { flex-direction: column; align-items: stretch; }

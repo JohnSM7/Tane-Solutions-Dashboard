@@ -33,11 +33,21 @@
         </div>
 
         <!-- Cards List -->
-        <div class="cards-list">
+        <div
+          class="cards-list"
+          :class="{ 'drag-over': dragOverCol === col.key }"
+          @dragover.prevent="onDragOver(col.key)"
+          @dragleave="onDragLeave"
+          @drop.prevent="onDrop(col.key)"
+        >
           <div
             v-for="tarea in getColumnTareas(col.key)"
             :key="tarea.id"
             class="task-card"
+            :class="{ 'dragging': draggingId === tarea.id }"
+            draggable="true"
+            @dragstart="onDragStart(tarea)"
+            @dragend="onDragEnd"
             @click="openEditModal(tarea)"
           >
             <!-- Card Top Row -->
@@ -72,22 +82,6 @@
                 {{ formatDate(tarea.fecha_limite) }}
               </span>
             </div>
-
-            <!-- Move Buttons -->
-            <div class="card-actions" @click.stop>
-              <button
-                class="move-btn"
-                :disabled="getColumnIndex(col.key) === 0"
-                title="Mover a la izquierda"
-                @click.stop="moveCard(tarea, 'left')"
-              >←</button>
-              <button
-                class="move-btn"
-                :disabled="getColumnIndex(col.key) === COLUMNAS.length - 1"
-                title="Mover a la derecha"
-                @click.stop="moveCard(tarea, 'right')"
-              >→</button>
-            </div>
           </div>
 
           <!-- Empty state -->
@@ -105,7 +99,7 @@
 
     <!-- Create / Edit Modal -->
     <Teleport to="body">
-      <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
+      <div v-if="showModal" class="modal-overlay">
         <div class="modal">
           <div class="modal-header">
             <h2 class="modal-title">{{ isEditing ? 'Editar Tarea' : 'Nueva Tarea' }}</h2>
@@ -240,10 +234,6 @@ function getColumnTareas(key: string): Tarea[] {
   return tareas.value.filter(t => t.estado === key)
 }
 
-function getColumnIndex(key: string): number {
-  return COLUMNAS.findIndex(c => c.key === key)
-}
-
 const pendingCount = computed(() =>
   tareas.value.filter(t => t.estado === 'backlog').length
 )
@@ -256,14 +246,38 @@ function formatDate(date: string): string {
   return new Date(date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
 }
 
-// ── Move cards ───────────────────────────────────────────────────────────────
-async function moveCard(tarea: Tarea, direction: 'left' | 'right') {
-  const idx = getColumnIndex(tarea.estado)
-  const newIdx = direction === 'left' ? idx - 1 : idx + 1
-  if (newIdx < 0 || newIdx >= COLUMNAS.length) return
-  const newEstado = COLUMNAS[newIdx]!.key as TareaEstado
+// ── Drag & Drop ───────────────────────────────────────────────────────────────
+const draggingId  = ref<string | null>(null)
+const dragOverCol = ref<string | null>(null)
+let   draggingTarea: Tarea | null = null
+
+function onDragStart(tarea: Tarea) {
+  draggingTarea = tarea
+  draggingId.value = tarea.id
+}
+
+function onDragEnd() {
+  draggingId.value = null
+  dragOverCol.value = null
+  draggingTarea = null
+}
+
+function onDragOver(colKey: string) {
+  dragOverCol.value = colKey
+}
+
+function onDragLeave() {
+  dragOverCol.value = null
+}
+
+async function onDrop(colKey: string) {
+  dragOverCol.value = null
+  if (!draggingTarea || draggingTarea.estado === colKey) return
+  const tarea = draggingTarea
+  draggingTarea = null
+  draggingId.value = null
   try {
-    await updateTarea(tarea.id, { estado: newEstado })
+    await updateTarea(tarea.id, { estado: colKey as TareaEstado })
     await refresh()
     success('Tarea movida')
   } catch {
@@ -498,16 +512,22 @@ async function submitForm() {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 10px 12px;
-  cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  cursor: grab;
+  transition: border-color 0.15s, box-shadow 0.15s, opacity 0.15s;
   display: flex;
   flex-direction: column;
   gap: 7px;
+  user-select: none;
 }
 
 .task-card:hover {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 1px var(--color-primary)22;
+}
+
+.task-card.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
 }
 
 .card-top-row {
@@ -594,33 +614,11 @@ async function submitForm() {
   border-color: #ef444455;
 }
 
-.card-actions {
-  display: flex;
-  gap: 4px;
-  margin-top: 2px;
-}
-
-.move-btn {
-  background: var(--color-bg-lighter);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-  padding: 2px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-  line-height: 1.5;
-}
-
-.move-btn:hover:not(:disabled) {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-  background: var(--color-bg-card);
-}
-
-.move-btn:disabled {
-  opacity: 0.25;
-  cursor: not-allowed;
+.cards-list.drag-over {
+  background: rgba(227, 255, 4, 0.04);
+  outline: 2px dashed rgba(227, 255, 4, 0.4);
+  outline-offset: -4px;
+  border-radius: 6px;
 }
 
 /* ── Add Card Button ────────────────────────────────────────────────────────── */

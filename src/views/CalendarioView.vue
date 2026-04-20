@@ -20,7 +20,7 @@ interface Proyecto {
   id: string;
   nombre: string;
   estado: string;
-  fecha_fin: string | null;
+  fecha_entrega_estimada: string | null;
 }
 
 interface CalEvent {
@@ -175,8 +175,8 @@ async function fetchEvents() {
         .not('fecha_limite', 'is', null),
       supabase
         .from('proyectos')
-        .select('id, nombre, estado, fecha_fin')
-        .not('fecha_fin', 'is', null)
+        .select('id, nombre, estado, fecha_entrega_estimada')
+        .not('fecha_entrega_estimada', 'is', null)
         .neq('estado', 'Completado'),
     ]);
 
@@ -196,14 +196,14 @@ async function fetchEvents() {
     }
 
     for (const p of (proyectosRes.data ?? []) as Proyecto[]) {
-      if (!p.fecha_fin) continue;
+      if (!p.fecha_entrega_estimada) continue;
       result.push({
         id:     p.id,
         type:   'proyecto',
         title:  p.nombre,
         color:  ESTADO_COLORS[p.estado] ?? '#e3ff04',
         estado: p.estado,
-        date:   p.fecha_fin.slice(0, 10),
+        date:   p.fecha_entrega_estimada.slice(0, 10),
       });
     }
 

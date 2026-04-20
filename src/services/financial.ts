@@ -34,7 +34,28 @@ export type ProyectoRentabilidad = {
   fecha_fin: string | null;
   clientes?: { nombre: string };
   facturas?: Factura[];
+  gastos?: Gasto[];
 };
+
+export type Gasto = {
+  id: string;
+  proyecto_id: string;
+  concepto: string;
+  importe: number;
+  categoria: string;
+  fecha: string;
+  created_at: string;
+};
+
+export const CATEGORIAS_GASTO = [
+  'Herramienta / Software',
+  'Subcontrata',
+  'Publicidad / Ads',
+  'Diseño',
+  'Hosting / Infraestructura',
+  'Desplazamiento',
+  'Otro',
+] as const;
 
 // ── Datos fiscales de la agencia ──────────────────────────────────────────────
 // Actualiza estos valores con los datos reales de Tane Solutions
@@ -74,11 +95,17 @@ function monthLabel(date: Date): string {
 // ── Número de factura automático ──────────────────────────────────────────────
 async function nextInvoiceNumber(): Promise<string> {
   const year = new Date().getFullYear();
-  const { count } = await supabase
+  const prefix = `FAC-${year}-`;
+  const { data } = await supabase
     .from('facturas')
-    .select('id', { count: 'exact', head: true });
-  const seq = String((count ?? 0) + 1).padStart(3, '0');
-  return `FAC-${year}-${seq}`;
+    .select('numero_factura')
+    .like('numero_factura', `${prefix}%`)
+    .order('numero_factura', { ascending: false })
+    .limit(1);
+  const lastSeq = data?.[0]?.numero_factura
+    ? parseInt(data[0].numero_factura.replace(prefix, ''), 10)
+    : 0;
+  return `${prefix}${String(lastSeq + 1).padStart(3, '0')}`;
 }
 
 // ── Crear facturas automáticas según plan de pago ────────────────────────────
@@ -380,6 +407,7 @@ export async function generateInvoicePDF(
 export function useFinancialData() {
   const facturas = ref<Factura[]>([]);
   const proyectos = ref<ProyectoRentabilidad[]>([]);
+  const gastos = ref<Gasto[]>([]);
   const loading = ref(true);
 
   const kpis = computed(() => {
@@ -468,14 +496,20 @@ export function useFinancialData() {
     }));
   });
 
-  // Proyectos enriquecidos con sus facturas vinculadas
+  // Proyectos enriquecidos con facturas y gastos vinculados
   const proyectosConFacturas = computed(() =>
-    proyectos.value.map(p => ({
-      ...p,
-      facturas: facturas.value.filter(f => f.proyecto_id === p.id)
-        .sort((a, b) => a.pago_numero - b.pago_numero),
-    }))
+    proyectos.value.map(p => {
+      const facts = facturas.value.filter(f => f.proyecto_id === p.id)
+        .sort((a, b) => a.pago_numero - b.pago_numero);
+      const gasts = gastos.value.filter(g => g.proyecto_id === p.id)
+        .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+      const cobrado = facts.filter(f => f.estado === 'Pagada').reduce((s, f) => s + f.importe, 0);
+      const totalGastos = gasts.reduce((s, g) => s + g.importe, 0);
+      return { ...p, facturas: facts, gastos: gasts, cobrado, totalGastos, beneficioNeto: cobrado - totalGastos };
+    })
   );
+
+  const loadingGuard = setTimeout(() => { loading.value = false; }, 15_000);
 
   Promise.all([
     supabase
@@ -486,14 +520,19 @@ export function useFinancialData() {
       .from('proyectos_rentabilidad')
       .select('*, clientes(nombre)')
       .order('fecha_inicio', { ascending: false }),
-  ]).then(([facturasRes, proyectosRes]) => {
+    supabase
+      .from('gastos')
+      .select('*')
+      .order('fecha', { ascending: false }),
+  ]).then(([facturasRes, proyectosRes, gastosRes]) => {
     facturas.value = (facturasRes.data ?? []) as Factura[];
     proyectos.value = (proyectosRes.data ?? []) as ProyectoRentabilidad[];
+    gastos.value = (gastosRes.data ?? []) as Gasto[];
   })
     .catch(console.error)
-    .finally(() => { loading.value = false; });
+    .finally(() => { clearTimeout(loadingGuard); loading.value = false; });
 
-  return { facturas, proyectos, proyectosConFacturas, kpis, monthlyBilling, loading };
+  return { facturas, proyectos, gastos, proyectosConFacturas, kpis, monthlyBilling, loading };
 }
 
 // ── CRUD Facturas ─────────────────────────────────────────────────────────────
@@ -534,7 +573,7 @@ export async function deleteFactura(id: string): Promise<void> {
 // ── CRUD Proyectos rentabilidad ───────────────────────────────────────────────
 
 function stripProyectoJoins(p: Partial<ProyectoRentabilidad>): Partial<ProyectoRentabilidad> {
-  const { clientes, facturas, ...clean } = p as any;
+  const { clientes, facturas, gastos, cobrado, totalGastos, beneficioNeto, ...clean } = p as any;
   return clean;
 }
 
@@ -566,5 +605,33 @@ export async function updateProyectoRentabilidad(
 
 export async function deleteProyectoRentabilidad(id: string): Promise<void> {
   const { error } = await supabase.from('proyectos_rentabilidad').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ── CRUD Gastos ───────────────────────────────────────────────────────────────
+
+export async function createGasto(form: Omit<Gasto, 'id' | 'created_at'>): Promise<Gasto> {
+  const { data, error } = await supabase
+    .from('gastos')
+    .insert(form)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as Gasto;
+}
+
+export async function updateGasto(id: string, updates: Partial<Omit<Gasto, 'id' | 'created_at'>>): Promise<Gasto> {
+  const { data, error } = await supabase
+    .from('gastos')
+    .update(updates)
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as Gasto;
+}
+
+export async function deleteGasto(id: string): Promise<void> {
+  const { error } = await supabase.from('gastos').delete().eq('id', id);
   if (error) throw error;
 }

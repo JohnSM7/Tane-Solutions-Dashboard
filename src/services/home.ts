@@ -38,6 +38,9 @@ export function useHomeData() {
   const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const firstOfPrevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}-01`;
 
+  // Hard cap: if all queries somehow hang past the fetch timeout, unblock the UI.
+  const loadingGuard = setTimeout(() => { loading.value = false; }, 15_000);
+
   Promise.all([
     // 1. Facturas del mes pagadas
     supabase.from('facturas').select('importe').eq('estado', 'Pagada')
@@ -117,7 +120,7 @@ export function useHomeData() {
     };
   })
   .catch(console.error)
-  .finally(() => { loading.value = false; });
+  .finally(() => { clearTimeout(loadingGuard); loading.value = false; });
 
   // Recent activity (parallel, non-blocking)
   Promise.all([

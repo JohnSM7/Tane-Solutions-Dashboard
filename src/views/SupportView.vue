@@ -68,34 +68,51 @@ const saveTicket = async () => {
   } finally { saving.value = false; }
 };
 
+// ── Cierre de ticket con respuesta ────────────────────────────────────────────
+const showCierreModal = ref(false);
+const cierreTicket = ref<Ticket | null>(null);
+const cierreRespuesta = ref('');
+const guardandoCierre = ref(false);
+
 const cambiarEstadoTicket = async (t: Ticket, estado: string) => {
+  if (estado === 'Cerrado') {
+    cierreTicket.value = t;
+    cierreRespuesta.value = t.respuesta_cierre ?? '';
+    showCierreModal.value = true;
+    return;
+  }
   try {
     const updates: Partial<Ticket> = { estado: estado as Ticket['estado'] };
     if (estado === 'En proceso' && !t.fecha_primera_respuesta) {
       updates.fecha_primera_respuesta = new Date().toISOString();
     }
-    if (estado === 'Cerrado') {
-      updates.fecha_cierre = new Date().toISOString();
-      if (!t.fecha_primera_respuesta) updates.fecha_primera_respuesta = new Date().toISOString();
-    }
     const updated = await updateTicket(t.id, updates);
     const idx = tickets.value.findIndex(x => x.id === t.id);
     if (idx !== -1) tickets.value[idx] = updated;
   } catch (error: any) {
-    console.error('[cambiarEstadoTicket] Error:', error);
-    alert('Error al cambiar el estado del ticket: ' + (error.message || 'Error desconocido'));
+    alert('Error al cambiar el estado: ' + (error.message || 'Error desconocido'));
   }
 };
 
-const setSatisfaccion = async (t: Ticket, val: number) => {
+const confirmarCierre = async () => {
+  if (!cierreTicket.value) return;
+  guardandoCierre.value = true;
   try {
-    const updated = await updateTicket(t.id, { satisfaccion: val });
+    const t = cierreTicket.value;
+    const updates: Partial<Ticket> = {
+      estado: 'Cerrado',
+      respuesta_cierre: cierreRespuesta.value.trim() || null,
+      fecha_cierre: new Date().toISOString(),
+    };
+    if (!t.fecha_primera_respuesta) updates.fecha_primera_respuesta = new Date().toISOString();
+    const updated = await updateTicket(t.id, updates);
     const idx = tickets.value.findIndex(x => x.id === t.id);
     if (idx !== -1) tickets.value[idx] = updated;
+    showCierreModal.value = false;
+    toast.success('Ticket cerrado con respuesta enviada al cliente.');
   } catch (error: any) {
-    console.error('[setSatisfaccion] Error:', error);
-    alert('Error al guardar la valoración: ' + (error.message || 'Error desconocido'));
-  }
+    alert('Error al cerrar el ticket: ' + (error.message || 'Error desconocido'));
+  } finally { guardandoCierre.value = false; }
 };
 
 const confirmDeleteTicket = async (t: Ticket) => {
@@ -256,6 +273,7 @@ const formatTime = (iso: string) => {
                   {{ t.prioridad }}
                 </span>
               </div>
+              <div v-if="t.respuesta_cierre" class="ticket-respuesta">💬 {{ t.respuesta_cierre }}</div>
               <div class="ticket-actions">
                 <select
                   class="estado-select"
@@ -266,11 +284,7 @@ const formatTime = (iso: string) => {
                   <option>En proceso</option>
                   <option>Cerrado</option>
                 </select>
-                <div v-if="t.estado === 'Cerrado' && !t.satisfaccion" class="sat-row">
-                  <span class="muted">Valoración:</span>
-                  <button v-for="n in [1,2,3,4,5]" :key="n" class="sat-btn" @click="setSatisfaccion(t, n)">{{ n }}★</button>
-                </div>
-                <span v-if="t.satisfaccion" class="sat-value">{{ t.satisfaccion }}★ valorado</span>
+                <span v-if="t.satisfaccion" class="sat-value">{{ t.satisfaccion }}★ cliente</span>
                 <button class="btn-icon-text" @click="openEdit(t)" title="Editar">✏️</button>
                 <button class="btn-icon-text danger" @click="confirmDeleteTicket(t)" title="Eliminar">🗑️</button>
               </div>
@@ -281,7 +295,7 @@ const formatTime = (iso: string) => {
     </template>
 
     <!-- Modal: Servidor -->
-    <div class="modal-overlay" v-if="showServidorModal" @click.self="showServidorModal = false">
+    <div class="modal-overlay" v-if="showServidorModal">
       <div class="modal-box">
         <p class="modal-title">{{ editingServidorId ? 'Editar Servidor' : 'Nuevo Servidor' }}</p>
         <div class="form-group">
@@ -312,7 +326,7 @@ const formatTime = (iso: string) => {
     </div>
 
     <!-- Modal: Ticket -->
-    <div class="modal-overlay" v-if="showTicketModal" @click.self="showTicketModal = false">
+    <div class="modal-overlay" v-if="showTicketModal">
       <div class="modal-box">
         <p class="modal-title">{{ editingId !== null ? 'Editar Ticket' : 'Nuevo Ticket' }}</p>
         <div class="form-group">
@@ -350,6 +364,30 @@ const formatTime = (iso: string) => {
             {{ saving ? 'Guardando...' : 'Guardar' }}
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Cerrar ticket con respuesta -->
+  <div class="modal-overlay" v-if="showCierreModal">
+    <div class="modal-box">
+      <p class="modal-title">Cerrar ticket #{{ cierreTicket?.id }}</p>
+      <p class="modal-subtitle muted">{{ cierreTicket?.asunto }}</p>
+      <div class="form-group" style="margin-top:1rem;">
+        <label>Respuesta / Resolución para el cliente</label>
+        <textarea
+          v-model="cierreRespuesta"
+          class="form-input"
+          rows="4"
+          placeholder="Describe qué se hizo para resolver la incidencia..."
+          style="resize:vertical;"
+        ></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-text" @click="showCierreModal = false">Cancelar</button>
+        <button class="btn-primary" @click="confirmarCierre" :disabled="guardandoCierre">
+          {{ guardandoCierre ? 'Cerrando...' : 'Cerrar ticket' }}
+        </button>
       </div>
     </div>
   </div>
@@ -403,6 +441,8 @@ const formatTime = (iso: string) => {
 .sat-btn { background: rgba(255,255,255,0.05); border: 1px solid var(--color-border); color: var(--color-text-muted); padding: 0.15rem 0.4rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
 .sat-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
 .sat-value { font-size: 0.82rem; color: var(--color-primary); font-weight: 700; }
+.ticket-respuesta { font-size: 0.82rem; color: var(--color-text-muted); background: rgba(255,255,255,0.04); border-left: 2px solid var(--color-primary); padding: 0.4rem 0.75rem; border-radius: 0 4px 4px 0; margin: 0.4rem 0; }
+.modal-subtitle { font-size: 0.9rem; color: var(--color-text-muted); margin: 0; }
 .btn-icon-text { background: transparent; border: none; cursor: pointer; font-size: 0.9rem; padding: 0.25rem; border-radius: 4px; }
 .btn-icon-text:hover { background: rgba(255,255,255,0.1); }
 .btn-icon-text.danger:hover { background: rgba(255,68,68,0.15); }

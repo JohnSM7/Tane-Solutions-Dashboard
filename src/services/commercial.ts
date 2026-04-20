@@ -16,6 +16,7 @@ export type Lead = {
   notas: string;
   fecha_creacion: string;
   fecha_cierre: string | null;
+  link_canva: string | null;
 };
 
 export const ESTADO_COLORS: Record<string, string> = {
@@ -119,12 +120,14 @@ export function useCommercialData() {
       }));
   });
 
+  const loadingGuard = setTimeout(() => { loading.value = false; }, 15_000);
+
   Promise.resolve(supabase.from('leads').select('*').order('fecha_creacion', { ascending: false }))
     .then(({ data }) => {
       leads.value = (data ?? []) as Lead[];
     })
     .catch(console.error)
-    .finally(() => { loading.value = false; });
+    .finally(() => { clearTimeout(loadingGuard); loading.value = false; });
 
   return { leads, kpis, pipeline, topServices, loading };
 }

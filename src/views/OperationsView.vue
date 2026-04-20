@@ -224,7 +224,7 @@ const horasPendientesMiembro = computed(() => {
     </template>
 
     <!-- Modal: Proyecto -->
-    <div class="modal-overlay" v-if="showProyModal" @click.self="showProyModal = false">
+    <div class="modal-overlay" v-if="showProyModal">
       <div class="modal-box">
         <p class="modal-title">{{ editingId ? 'Editar Proyecto' : 'Nuevo Proyecto' }}</p>
         <div class="form-group">
@@ -274,7 +274,7 @@ const horasPendientesMiembro = computed(() => {
     </div>
 
     <!-- Modal: Horas disponibles del usuario -->
-    <div class="modal-overlay" v-if="showUsuarioModal" @click.self="showUsuarioModal = false">
+    <div class="modal-overlay" v-if="showUsuarioModal">
       <div class="modal-box">
         <p class="modal-title">Horas disponibles por semana</p>
         <p class="modal-hint">Ajusta la capacidad semanal de este usuario. La carga real se calcula automáticamente desde las tareas asignadas.</p>

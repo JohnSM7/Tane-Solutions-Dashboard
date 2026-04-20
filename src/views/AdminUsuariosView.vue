@@ -36,44 +36,107 @@ const totalClient = computed(() => usuarios.value.filter(u => u.rol === 'CLIENT'
 // ── Modal Crear ────────────────────────────────────────────────────────────────
 const showCrearModal = ref(false);
 const creando = ref(false);
+const successMsg = ref('');
+function showSuccess(msg: string) {
+  successMsg.value = msg;
+  setTimeout(() => { successMsg.value = ''; }, 4000);
+}
 const crearError = ref('');
 const crearForm = ref({
-  email: '', password: '', nombre: '',
+  email: '', nombre: '',
   rol: 'ADMIN' as 'ADMIN' | 'CLIENT',
   cliente_id: null as string | null,
   horas_disponibles_semana: 40,
 });
 
+const ITEMS_PREDEFINIDOS = [
+  'Logo en alta resolución (SVG / PNG)',
+  'Fotografías del negocio / producto',
+  'Acceso a redes sociales (usuario + contraseña)',
+  'Dominio y accesos de hosting',
+  'Paleta de colores y tipografías',
+  'Textos para las secciones (About, Servicios...)',
+  'NIF / CIF para facturación',
+  'Briefing del proyecto',
+] as const;
+
+const emailConfig = ref({
+  enviar: true,
+  mensaje: '',
+  checklist: [] as string[],
+  nuevoItem: '',
+});
+
+const toggleChecklistItem = (item: string) => {
+  const idx = emailConfig.value.checklist.indexOf(item);
+  if (idx === -1) emailConfig.value.checklist.push(item);
+  else emailConfig.value.checklist.splice(idx, 1);
+};
+
+const addCustomItem = () => {
+  const item = emailConfig.value.nuevoItem.trim();
+  if (item && !emailConfig.value.checklist.includes(item)) {
+    emailConfig.value.checklist.push(item);
+  }
+  emailConfig.value.nuevoItem = '';
+};
+
 const resetCrearForm = () => {
-  crearForm.value = { email: '', password: '', nombre: '', rol: 'ADMIN', cliente_id: null, horas_disponibles_semana: 40 };
+  crearForm.value = { email: '', nombre: '', rol: 'ADMIN', cliente_id: null, horas_disponibles_semana: 40 };
   crearError.value = '';
+  emailConfig.value = { enviar: false, mensaje: '', checklist: [], nuevoItem: '' };
 };
 
 const handleCrear = async () => {
   crearError.value = '';
   creando.value = true;
   try {
-    const nuevo = await crearUsuario({
-      ...crearForm.value,
+    const redirectTo = crearForm.value.rol === 'CLIENT'
+      ? 'https://clientes.tanesolutions.com/update-password'
+      : 'https://dashboard.tanesolutions.com/update-password';
+
+    const { usuario, setupLink } = await crearUsuario({
+      email: crearForm.value.email,
+      nombre: crearForm.value.nombre,
+      rol: crearForm.value.rol,
       cliente_id: crearForm.value.rol === 'CLIENT' ? crearForm.value.cliente_id : null,
       horas_disponibles_semana: crearForm.value.rol === 'ADMIN' ? crearForm.value.horas_disponibles_semana : 40,
+      redirectTo,
     });
-    usuarios.value.push(nuevo);
+    usuarios.value.push({ ...usuario, email: crearForm.value.email });
 
-    // Enviar email de bienvenida con credenciales
-    supabase.functions.invoke('send-email', { body: {
-      type: 'welcome',
-      nombre: crearForm.value.nombre,
-      email: crearForm.value.email,
-      password: crearForm.value.password,
-      rol: crearForm.value.rol,
-      loginUrl: crearForm.value.rol === 'CLIENT'
-        ? `${window.location.origin.replace('dashboard', 'clientes')}/login-cliente`
-        : `${window.location.origin}/login`,
-    }}).catch(console.warn);
+    // Enviar email de bienvenida con link de activación
+    if (emailConfig.value.enviar) {
+      const { data: emailData, error: emailError } = await supabase.functions.invoke('send-email', { body: {
+        type: 'welcome',
+        nombre: crearForm.value.nombre,
+        email: crearForm.value.email,
+        setupLink,
+        loginUrl: crearForm.value.rol === 'CLIENT'
+          ? 'https://clientes.tanesolutions.com/login-cliente'
+          : 'https://dashboard.tanesolutions.com/login',
+        mensaje: crearForm.value.rol === 'CLIENT' ? emailConfig.value.mensaje : '',
+        checklist: crearForm.value.rol === 'CLIENT' ? emailConfig.value.checklist : [],
+      }});
+      if (emailError) {
+        crearError.value = `Usuario creado. Email no enviado: ${emailError.message}`;
+        creando.value = false;
+        return;
+      }
+      if (emailData && !emailData.success) {
+        const detail = emailData.error ?? JSON.stringify(emailData.details ?? '');
+        crearError.value = `Usuario creado. Email no enviado: ${detail}`;
+        creando.value = false;
+        return;
+      }
+    }
 
     showCrearModal.value = false;
     resetCrearForm();
+    showSuccess(emailConfig.value.enviar
+      ? `✓ Usuario creado y email de bienvenida enviado a ${crearForm.value.email}`
+      : `✓ Usuario creado correctamente`
+    );
   } catch (e: any) {
     crearError.value = e?.message ?? 'Error al crear el usuario';
   } finally { creando.value = false; }
@@ -148,7 +211,7 @@ const handleReset = async (u: UsuarioCompleto) => {
   if (!u.email) return alert('Este usuario no tiene email registrado.');
   enviando.value = u.id;
   try {
-    await enviarResetPassword(u.email);
+    await enviarResetPassword(u.email, u.rol);
     enviado.value = u.id;
     setTimeout(() => { if (enviado.value === u.id) enviado.value = null; }, 3000);
   } catch (e: any) {
@@ -171,6 +234,10 @@ const timeSince = (d?: string | null) => {
 
 <template>
   <div class="view-container">
+    <transition name="toast">
+      <div v-if="successMsg" class="success-toast">{{ successMsg }}</div>
+    </transition>
+
     <div class="header">
       <div>
         <h1>Gestión de Usuarios</h1>
@@ -315,7 +382,7 @@ const timeSince = (d?: string | null) => {
   </div>
 
   <!-- ── Modal: Crear Usuario ─────────────────────────────────────────────────── -->
-  <div class="modal-overlay" v-if="showCrearModal" @click.self="showCrearModal = false; resetCrearForm()">
+  <div class="modal-overlay" v-if="showCrearModal">
     <div class="modal-box">
       <p class="modal-title">Nuevo Usuario</p>
 
@@ -338,12 +405,6 @@ const timeSince = (d?: string | null) => {
         <input v-model="crearForm.email" type="email" class="form-input" placeholder="usuario@email.com" />
       </div>
 
-      <div class="form-group">
-        <label>Contraseña temporal *</label>
-        <input v-model="crearForm.password" type="password" class="form-input" placeholder="Mínimo 6 caracteres" />
-        <span class="field-hint">El usuario podrá cambiarla desde su perfil. Recomiéndale usar "¿Olvidaste tu contraseña?" al primer acceso.</span>
-      </div>
-
       <template v-if="crearForm.rol === 'CLIENT'">
         <div class="form-group">
           <label>Empresa cliente vinculada</label>
@@ -351,6 +412,75 @@ const timeSince = (d?: string | null) => {
             <option :value="null">— Sin vincular —</option>
             <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
+        </div>
+
+        <!-- Email config -->
+        <div class="email-section">
+          <div class="email-section-header" @click="emailConfig.enviar = !emailConfig.enviar" style="cursor:pointer;">
+            <div>
+              <span class="section-label">Email de bienvenida</span>
+              <p style="margin:2px 0 0;font-size:0.78rem;color:var(--color-text-muted);">
+                Incluir checklist de materiales en el correo con credenciales
+              </p>
+            </div>
+            <button
+              type="button"
+              class="toggle-btn"
+              :class="{ active: emailConfig.enviar }"
+              @click.stop="emailConfig.enviar = !emailConfig.enviar"
+            >
+              {{ emailConfig.enviar ? 'Activado' : 'Desactivado' }}
+            </button>
+          </div>
+
+          <template v-if="emailConfig.enviar">
+            <div class="form-group" style="margin-top:0.75rem;">
+              <label>Mensaje personalizado (opcional)</label>
+              <textarea
+                v-model="emailConfig.mensaje"
+                class="form-input"
+                rows="2"
+                placeholder="Estamos encantados de comenzar este proyecto contigo..."
+                style="resize:vertical;"
+              ></textarea>
+            </div>
+
+            <div class="form-group">
+              <label>Materiales / documentación necesaria para el proyecto</label>
+              <div class="checklist-presets">
+                <button
+                  v-for="item in ITEMS_PREDEFINIDOS"
+                  :key="item"
+                  type="button"
+                  class="preset-chip"
+                  :class="{ active: emailConfig.checklist.includes(item) }"
+                  @click="toggleChecklistItem(item)"
+                >
+                  <span class="chip-icon">{{ emailConfig.checklist.includes(item) ? '✓' : '+' }}</span>
+                  {{ item }}
+                </button>
+              </div>
+              <div class="custom-item-row">
+                <input
+                  v-model="emailConfig.nuevoItem"
+                  class="form-input"
+                  placeholder="Añadir elemento personalizado..."
+                  @keydown.enter.prevent="addCustomItem"
+                />
+                <button class="btn-add-item" type="button" @click="addCustomItem">+</button>
+              </div>
+              <div v-if="emailConfig.checklist.length" class="checklist-summary">
+                <p class="checklist-summary-title">Elementos en el email:</p>
+                <ul class="checklist-summary-list">
+                  <li v-for="item in emailConfig.checklist" :key="item" class="checklist-summary-item">
+                    <span>{{ item }}</span>
+                    <button type="button" @click="emailConfig.checklist = emailConfig.checklist.filter(i => i !== item)">×</button>
+                  </li>
+                </ul>
+                <button type="button" class="btn-clear" @click="emailConfig.checklist = []">Limpiar todo</button>
+              </div>
+            </div>
+          </template>
         </div>
       </template>
 
@@ -368,7 +498,7 @@ const timeSince = (d?: string | null) => {
         <button
           class="btn-primary"
           @click="handleCrear"
-          :disabled="creando || !crearForm.email || !crearForm.password || !crearForm.nombre"
+          :disabled="creando || !crearForm.email || !crearForm.nombre || (crearForm.rol === 'CLIENT' && !crearForm.cliente_id)"
         >
           {{ creando ? 'Creando...' : 'Crear Usuario' }}
         </button>
@@ -377,7 +507,7 @@ const timeSince = (d?: string | null) => {
   </div>
 
   <!-- ── Modal: Editar Usuario ────────────────────────────────────────────────── -->
-  <div class="modal-overlay" v-if="showEditModal" @click.self="showEditModal = false">
+  <div class="modal-overlay" v-if="showEditModal">
     <div class="modal-box">
       <p class="modal-title">Editar Usuario</p>
 
@@ -556,6 +686,123 @@ const timeSince = (d?: string | null) => {
 .btn-text { background: transparent; border: none; color: var(--color-primary); cursor: pointer; font-size: 0.9rem; }
 .btn-primary { background-color: var(--color-primary); color: #000; font-weight: 700; padding: 0.6rem 1.4rem; border-radius: 6px; border: none; cursor: pointer; }
 .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Email section */
+.email-section {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background: rgba(227,255,4,0.03);
+}
+.email-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.section-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.toggle-row input[type="checkbox"] { accent-color: var(--color-primary); cursor: pointer; }
+.toggle-btn {
+  flex-shrink: 0;
+  padding: 0.3rem 0.9rem;
+  border-radius: 20px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-lighter);
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.toggle-btn.active { border-color: var(--color-primary); background: rgba(227,255,4,0.12); color: var(--color-primary); }
+.checklist-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+.preset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 20px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-lighter);
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.preset-chip:hover { border-color: var(--color-primary); color: var(--color-text-light); }
+.preset-chip.active { border-color: var(--color-primary); background: rgba(227,255,4,0.1); color: var(--color-primary); font-weight: 600; }
+.chip-icon { font-weight: 700; font-size: 0.85rem; }
+.custom-item-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.btn-add-item {
+  flex-shrink: 0;
+  width: 36px; height: 36px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-lighter);
+  color: var(--color-primary);
+  font-size: 1.3rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-add-item:hover { border-color: var(--color-primary); background: rgba(227,255,4,0.08); }
+.checklist-summary {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.5rem;
+  gap: 0.25rem;
+}
+.btn-clear {
+  background: none;
+  border: none;
+  color: #f87171;
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 0;
+  align-self: flex-start;
+}
+.checklist-summary-title { font-size: 0.75rem; color: #999; margin: 0 0 0.4rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.checklist-summary-list { list-style: none; padding: 0; margin: 0 0 0.5rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.checklist-summary-item { display: flex; align-items: center; justify-content: space-between; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.82rem; color: #d4d4d4; }
+.checklist-summary-item button { background: none; border: none; color: #666; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0 0 0.5rem; }
+.checklist-summary-item button:hover { color: #ff4444; }
+
+.success-toast {
+  position: fixed; top: 1.5rem; right: 1.5rem; z-index: 2000;
+  background: #1a1a1a; border: 1px solid #4ade80; border-radius: 8px;
+  padding: 0.9rem 1.4rem; color: #4ade80; font-size: 0.9rem; font-weight: 600;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+.toast-enter-active, .toast-leave-active { transition: all 0.3s ease; }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(-12px); }
 
 @media (max-width: 768px) {
   .kpi-row { grid-template-columns: repeat(3, 1fr); }

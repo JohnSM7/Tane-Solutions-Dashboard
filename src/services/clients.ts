@@ -74,9 +74,10 @@ function validateFile(file: File): void {
 
 function sanitizeFilename(name: string): string {
   return name
-    .replace(/[/\\:*?"<>|]/g, '_') // caracteres peligrosos
-    .replace(/\.{2,}/g, '_')        // path traversal (..)
-    .substring(0, 100);             // longitud máxima
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar tildes
+    .replace(/[/\\:*?"<>|]/g, '_')
+    .replace(/\.{2,}/g, '_')
+    .substring(0, 100);
 }
 
 // ── Health Score ─────────────────────────────────────────────────────────────
@@ -146,6 +147,8 @@ export function useClientsList() {
   const clients = ref<ClienteMapeado[]>([]);
   const loading = ref(true);
 
+  const loadingGuard = setTimeout(() => { loading.value = false; }, 15_000);
+
   Promise.resolve(
     supabase.from('clientes').select(
       '*, facturas(importe, estado), tickets(estado, prioridad), proyectos(estado), sedes(gmb_unanswered)'
@@ -174,7 +177,7 @@ export function useClientsList() {
     });
   })
   .catch(console.error)
-  .finally(() => { loading.value = false; });
+  .finally(() => { clearTimeout(loadingGuard); loading.value = false; });
 
   return { clients, loading };
 }
@@ -199,6 +202,8 @@ export function useClientProfile(clientId: string) {
     };
   });
 
+  const loadingGuard = setTimeout(() => { loading.value = false; }, 15_000);
+
   Promise.all([
     supabase.from('clientes').select('*').eq('id', clientId).single(),
     supabase.from('facturas').select('*').eq('cliente_id', clientId).order('fecha_emision', { ascending: false }),
@@ -216,7 +221,7 @@ export function useClientProfile(clientId: string) {
     usuarios.value = (usersRes.data ?? []) as UsuarioPerfil[];
   })
   .catch(err => console.error('[useClientProfile] Catch error:', err))
-  .finally(() => { loading.value = false; });
+  .finally(() => { clearTimeout(loadingGuard); loading.value = false; });
 
   const saveProfile = async (updates: Partial<{ name: string; contact: string; industry: string; logo: string; status: string; cif: string; direccionFacturacion: string }>) => {
     const dbUpdates: Record<string, any> = {};
@@ -317,6 +322,27 @@ export function useClientProfile(clientId: string) {
 // ── deleteClient ─────────────────────────────────────────────────────────────
 export async function deleteClient(id: string): Promise<void> {
   const { error } = await supabase.from('clientes').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ── sendWelcomeClientEmail ────────────────────────────────────────────────────
+export async function sendWelcomeClientEmail(opts: {
+  contactName: string;
+  clientName: string;
+  contactEmail: string;
+  mensaje: string;
+  checklist: string[];
+}): Promise<void> {
+  const { error } = await supabase.functions.invoke('send-email', {
+    body: {
+      type: 'welcome-client',
+      contactName: opts.contactName,
+      clientName: opts.clientName,
+      email: opts.contactEmail,
+      mensaje: opts.mensaje,
+      checklist: opts.checklist,
+    },
+  });
   if (error) throw error;
 }
 

@@ -31,10 +31,21 @@ function htmlWrap(bodyContent: string): string {
 
           <!-- Header strip -->
           <tr>
-            <td style="background:#E3FF04;padding:20px 32px;">
-              <span style="font-size:20px;font-weight:800;color:#000;letter-spacing:0.08em;text-transform:uppercase;">
-                TANE SOLUTIONS
-              </span>
+            <td style="background:#E3FF04;padding:16px 32px;">
+              <table cellpadding="0" cellspacing="0" role="presentation">
+                <tr>
+                  <td style="padding-right:12px;vertical-align:middle;">
+                    <img src="https://tanesolutions-d86dc-6261c.web.app/logo-verde.png"
+                         alt="Tane Solutions" width="40" height="40"
+                         style="display:block;width:40px;height:40px;object-fit:contain;" />
+                  </td>
+                  <td style="vertical-align:middle;">
+                    <span style="font-size:20px;font-weight:800;color:#000;letter-spacing:0.08em;text-transform:uppercase;">
+                      TANE SOLUTIONS
+                    </span>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
 
@@ -90,42 +101,81 @@ function infoRow(label: string, value: string): string {
 function buildWelcome(data: {
   nombre: string;
   email: string;
-  password: string;
-  rol: string;
+  setupLink?: string | null;
   loginUrl: string;
+  mensaje?: string;
+  checklist?: string[];
 }): { subject: string; html: string } {
-  const subject = 'Bienvenido/a a Tane Solutions — Tu acceso al portal';
+  const subject = 'Bienvenido/a a Tane Solutions — Activa tu acceso al portal';
+
+  const checklistHtml = (data.checklist && data.checklist.length > 0) ? `
+    ${divider()}
+    <p style="margin:0 0 16px;font-size:12px;color:#999;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">
+      Para comenzar tu proyecto, necesitamos lo siguiente
+    </p>
+    <table cellpadding="0" cellspacing="0" role="presentation" style="width:100%;margin-bottom:8px;">
+      ${data.checklist.map(item => `
+        <tr>
+          <td style="padding:9px 0;border-bottom:1px solid #222;vertical-align:middle;">
+            <table cellpadding="0" cellspacing="0" role="presentation">
+              <tr>
+                <td style="padding-right:14px;vertical-align:middle;">
+                  <span style="display:inline-block;width:16px;height:16px;border:2px solid #444;border-radius:3px;background:#111;"></span>
+                </td>
+                <td style="color:#d4d4d4;font-size:14px;line-height:1.5;">${item}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      `).join('')}
+    </table>
+  ` : '';
+
+  const accessBlock = data.setupLink ? `
+    <p style="margin:0 0 4px;color:#aaa;font-size:13px;">
+      Pulsa el botón para crear tu contraseña y acceder al portal por primera vez:
+    </p>
+    ${ctaButton('Crear mi contraseña', data.setupLink)}
+    <p style="margin:12px 0 0;font-size:12px;color:#666;">
+      Este enlace es de un solo uso y expira en 24 horas. Si caduca, solicita uno nuevo a tu administrador.
+    </p>
+  ` : `
+    <p style="margin:0 0 4px;color:#aaa;font-size:13px;">
+      Accede al portal desde el siguiente enlace:
+    </p>
+    ${ctaButton('Acceder al portal', data.loginUrl)}
+  `;
 
   const body = `
     <h2 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#fff;">
-      Bienvenido/a, ${data.nombre}
+      ¡Bienvenido/a, ${data.nombre}!
     </h2>
-    <p style="margin:0 0 24px;color:#aaa;font-size:14px;">
-      Tu cuenta en el portal de Tane Solutions ha sido creada. A continuación encontrarás tus credenciales de acceso.
+    <p style="margin:0 0 ${data.mensaje ? '12px' : '24px'};color:#aaa;font-size:14px;line-height:1.7;">
+      Tu cuenta en el portal de Tane Solutions ha sido creada.
     </p>
+    ${data.mensaje ? `<p style="margin:0 0 24px;color:#d4d4d4;font-size:14px;line-height:1.7;">${data.mensaje}</p>` : ''}
 
     ${divider()}
 
-    <!-- Credentials block -->
     <div style="background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:20px 24px;margin:0 0 24px;">
-      <p style="margin:0 0 4px;font-size:12px;color:#999;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">Tus credenciales</p>
+      <p style="margin:0 0 4px;font-size:12px;color:#999;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">Tu correo de acceso</p>
       <table cellpadding="0" cellspacing="0" role="presentation" style="width:100%;margin-top:12px;">
-        ${infoRow('Correo electrónico', data.email)}
-        ${infoRow('Contraseña temporal', `<span style="font-family:monospace;background:#1e1e1e;padding:2px 8px;border-radius:4px;color:#E3FF04;">${data.password}</span>`)}
-        ${infoRow('Rol asignado', data.rol)}
+        ${infoRow('Email', data.email)}
       </table>
+      <p style="margin:12px 0 0;font-size:13px;color:#aaa;">
+        Usa este correo electrónico para iniciar sesión en el portal.
+      </p>
     </div>
 
-    <p style="margin:0 0 4px;color:#aaa;font-size:13px;">
-      Haz clic en el botón para acceder al portal:
-    </p>
-    ${ctaButton('Acceder al portal', data.loginUrl)}
+    ${checklistHtml}
+
+    ${accessBlock}
 
     ${divider()}
 
     <p style="margin:0;font-size:13px;color:#888;">
-      Por seguridad, te recomendamos <strong style="color:#e5e5e5;">cambiar tu contraseña</strong> en tu primer inicio de sesión.
-      Si tienes algún problema para acceder, contacta con tu administrador.
+      Si tienes algún problema para acceder, contacta con tu gestor de cuenta en
+      <a href="mailto:info@tanesolutions.com" style="color:#E3FF04;text-decoration:none;">info@tanesolutions.com</a>.
     </p>
   `;
 
@@ -286,6 +336,116 @@ function buildInformeNew(data: {
   return { subject, html: htmlWrap(body) };
 }
 
+function buildWelcomeClient(data: {
+  contactName: string;
+  clientName: string;
+  email: string;
+  mensaje: string;
+  checklist: string[];
+  loginUrl: string;
+}): { subject: string; html: string } {
+  const subject = `Bienvenido/a a Tane Solutions · ${data.clientName}`;
+
+  const checklistHtml = data.checklist.length > 0 ? `
+    ${divider()}
+    <p style="margin:0 0 16px;font-size:12px;color:#999;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">
+      Para comenzar tu proyecto, necesitamos lo siguiente
+    </p>
+    <table cellpadding="0" cellspacing="0" role="presentation" style="width:100%;margin-bottom:8px;">
+      ${data.checklist.map(item => `
+        <tr>
+          <td style="padding:9px 0;border-bottom:1px solid #222;vertical-align:middle;">
+            <table cellpadding="0" cellspacing="0" role="presentation">
+              <tr>
+                <td style="padding-right:14px;vertical-align:middle;">
+                  <span style="display:inline-block;width:16px;height:16px;border:2px solid #444;border-radius:3px;background:#111;"></span>
+                </td>
+                <td style="color:#d4d4d4;font-size:14px;line-height:1.5;">${item}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      `).join('')}
+    </table>
+  ` : '';
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#fff;">
+      ¡Bienvenido/a, ${data.contactName}!
+    </h2>
+    <p style="margin:0 0 24px;color:#aaa;font-size:14px;line-height:1.7;">
+      Estamos encantados de darte la bienvenida como nuevo cliente de
+      <strong style="color:#e5e5e5;">Tane Solutions</strong>.
+      ${data.mensaje ? `<br/><br/><span style="color:#d4d4d4;">${data.mensaje}</span>` : ''}
+    </p>
+
+    ${checklistHtml}
+
+    ${divider()}
+
+    <p style="margin:0 0 4px;color:#aaa;font-size:13px;">
+      Accede a tu portal para ver el estado de tu proyecto y comunicarte con nuestro equipo:
+    </p>
+    ${ctaButton('Acceder a mi portal', data.loginUrl)}
+
+    ${divider()}
+
+    <p style="margin:0;font-size:13px;color:#888;">
+      Si tienes cualquier pregunta, escríbenos a
+      <a href="mailto:info@tanesolutions.com" style="color:#E3FF04;text-decoration:none;">info@tanesolutions.com</a>
+      y te atendemos lo antes posible.
+    </p>
+  `;
+
+  return { subject, html: htmlWrap(body) };
+}
+
+function buildLinkNew(data: {
+  contactName: string;
+  clientName: string;
+  titulo: string;
+  descripcion: string | null;
+  url: string;
+  clienteEmail: string;
+}): { subject: string; html: string } {
+  const subject = `Nuevo contenido disponible en tu portal — ${data.titulo}`;
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#fff;">
+      Nuevo contenido en tu portal
+    </h2>
+    <p style="margin:0 0 24px;color:#aaa;font-size:14px;line-height:1.7;">
+      Hola, <strong style="color:#e5e5e5;">${data.contactName}</strong>. Tu equipo de Tane Solutions ha compartido
+      nuevo contenido contigo en el portal de <strong style="color:#e5e5e5;">${data.clientName}</strong>.
+    </p>
+
+    ${divider()}
+
+    <div style="background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:20px 24px;margin:0 0 24px;">
+      <p style="margin:0 0 12px;font-size:12px;color:#999;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">Nuevo link compartido</p>
+      <table cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+        ${infoRow('Título', `<strong style="color:#fff;">${data.titulo}</strong>`)}
+        ${data.descripcion ? infoRow('Descripción', data.descripcion) : ''}
+        ${infoRow('Enlace', `<a href="${data.url}" style="color:#E3FF04;text-decoration:none;word-break:break-all;">${data.url}</a>`)}
+      </table>
+    </div>
+
+    <p style="margin:0 0 4px;color:#aaa;font-size:13px;">
+      Accede a tu portal para ver todos tus recursos compartidos:
+    </p>
+    ${ctaButton('Ver en mi portal', 'https://clientes.tanesolutions.com/client-panel')}
+
+    ${divider()}
+
+    <p style="margin:0;font-size:13px;color:#888;">
+      Si tienes alguna duda sobre este contenido, contacta con tu gestor de cuenta en
+      <a href="mailto:info@tanesolutions.com" style="color:#E3FF04;text-decoration:none;">info@tanesolutions.com</a>.
+    </p>
+  `;
+
+  return { subject, html: htmlWrap(body) };
+}
+
 function buildPasswordReset(data: {
   nombre: string;
   email: string;
@@ -360,12 +520,18 @@ Deno.serve(async (req) => {
     let html: string;
 
     if (type === 'welcome') {
-      const { nombre, email, password, rol, loginUrl } = body;
-      if (!nombre || !email || !password || !rol || !loginUrl) {
-        return json({ error: 'welcome: faltan campos (nombre, email, password, rol, loginUrl)' }, 400);
+      const { nombre, email, setupLink, loginUrl, mensaje, checklist } = body;
+      if (!nombre || !email || !loginUrl) {
+        return json({ error: 'welcome: faltan campos (nombre, email, loginUrl)' }, 400);
       }
       recipient = email;
-      ({ subject, html } = buildWelcome({ nombre, email, password, rol, loginUrl }));
+      ({ subject, html } = buildWelcome({
+        nombre, email,
+        setupLink: setupLink ?? null,
+        loginUrl,
+        mensaje: mensaje ?? '',
+        checklist: Array.isArray(checklist) ? checklist : [],
+      }));
 
     } else if (type === 'ticket-new') {
       const { ticketId, asunto, descripcion, clienteNombre, prioridad, adminEmail } = body;
@@ -390,6 +556,27 @@ Deno.serve(async (req) => {
       }
       recipient = clienteEmail;
       ({ subject, html } = buildInformeNew({ titulo, periodo, clienteEmail, clienteNombre }));
+
+    } else if (type === 'welcome-client') {
+      const { contactName, clientName, email, mensaje, checklist, loginUrl } = body;
+      if (!contactName || !clientName || !email) {
+        return json({ error: 'welcome-client: faltan campos (contactName, clientName, email)' }, 400);
+      }
+      recipient = email;
+      ({ subject, html } = buildWelcomeClient({
+        contactName, clientName, email,
+        mensaje: mensaje ?? '',
+        checklist: Array.isArray(checklist) ? checklist : [],
+        loginUrl: loginUrl ?? 'https://clientes.tanesolutions.com/login',
+      }));
+
+    } else if (type === 'link-new') {
+      const { contactName, clientName, titulo, descripcion, url, clienteEmail } = body;
+      if (!clientName || !titulo || !url || !clienteEmail) {
+        return json({ error: 'link-new: faltan campos (clientName, titulo, url, clienteEmail)' }, 400);
+      }
+      recipient = clienteEmail;
+      ({ subject, html } = buildLinkNew({ contactName: contactName || clientName, clientName, titulo, descripcion: descripcion ?? null, url, clienteEmail }));
 
     } else if (type === 'password-reset') {
       const { nombre, email, resetUrl } = body;
@@ -421,7 +608,12 @@ Deno.serve(async (req) => {
     const resendData = await resendRes.json();
 
     if (!resendRes.ok) {
-      return json({ error: 'Error al enviar el correo', details: resendData }, 502);
+      // Devolver 200 para que el cliente pueda leer el body — el error va en el JSON
+      return json({
+        success: false,
+        error: resendData?.message ?? resendData?.error ?? 'Error al enviar el correo',
+        details: resendData,
+      });
     }
 
     return json({ success: true, id: resendData.id });

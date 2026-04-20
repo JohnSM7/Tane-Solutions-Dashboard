@@ -41,14 +41,28 @@ const handleUpdatePassword = async () => {
     });
     if (error) throw error;
     
-    successMsg.value = 'Tu contraseña ha sido actualizada con éxito. Cerrando sesión para validar los cambios...';
-    
-    // Force sign out to invalidate current recovery session
+    successMsg.value = 'Tu contraseña ha sido actualizada con éxito. Redirigiendo al acceso...';
+
+    // Leer el rol directamente de la DB antes de cerrar sesión
+    // (authStore.role puede ser null si el perfil aún no cargó)
+    let loginUrl = '/login';
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        const { data: perfil } = await supabase
+          .from('usuarios')
+          .select('rol')
+          .eq('id', session.user.id)
+          .single();
+        if (perfil?.rol === 'CLIENT') loginUrl = '/login-cliente';
+      }
+    } catch { /* si falla, redirige al dashboard por defecto */ }
+
+    // Invalidar la sesión de recuperación
     await supabase.auth.signOut();
-    
-    // Redirect to login after a short delay
+
     setTimeout(() => {
-      window.location.href = '/login';
+      window.location.href = loginUrl;
     }, 2500);
   } catch (e: any) {
     errorMsg.value = `Error: ${e.message}`;
@@ -99,7 +113,7 @@ const handleUpdatePassword = async () => {
         <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
         <p v-if="successMsg" class="success-msg">{{ successMsg }}</p>
 
-        <button type="submit" class="btn-primary login-btn" :disabled="isLoading || !!errorMsg">
+        <button type="submit" class="btn-primary login-btn" :disabled="isLoading">
           {{ isLoading ? 'Actualizando...' : 'Cambiar Contraseña' }}
         </button>
       </form>

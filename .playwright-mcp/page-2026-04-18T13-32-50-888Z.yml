@@ -1,0 +1,13 @@
+- main [ref=e4]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - img "Tane Solutions" [ref=e8]
+      - heading "Tane Solutions" [level=1] [ref=e9]
+      - paragraph [ref=e10]: Restablecer contraseña
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]: Correo Electrónico
+        - textbox "ejemplo@correo.com" [ref=e14]: admin@tanesolutions.com
+      - paragraph [ref=e25]: Se ha enviado un enlace de recuperación a tu correo.
+      - button "Enviar enlace de recuperación" [ref=e21] [cursor=pointer]
+      - button "Volver al Inicio de Sesión" [ref=e22] [cursor=pointer]

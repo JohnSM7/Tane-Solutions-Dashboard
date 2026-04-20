@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import DashboardCard from '../components/DashboardCard.vue';
 import {
   useCommercialData, createLead, updateLead, deleteLead,
@@ -8,6 +8,7 @@ import {
 import { createProyectoRentabilidad, createFacturasFromPlan } from '../services/financial';
 import { createClient } from '../services/clients';
 import { exportCsv } from '../utils/exportCsv';
+import { supabase } from '../supabase';
 
 const { leads, kpis, pipeline, topServices, loading } = useCommercialData();
 
@@ -26,9 +27,53 @@ const editingId = ref<string | null>(null);
 const emptyForm = (): Partial<Lead> => ({
   nombre: '', empresa: '', email: '', telefono: '',
   fuente: 'Orgánico', servicio: '', estado: 'Nuevo',
-  valor_estimado: 0, cac: 0, notas: '',
+  valor_estimado: 0, cac: 0, notas: '', link_canva: null,
 });
 const form = ref<Partial<Lead>>(emptyForm());
+
+// ── Selector inteligente de servicio ─────────────────────────────────────────
+const PACKS_PREDEFINIDOS = [
+  'Pack Starter',
+  'Pack Professional',
+  'Pack Enterprise',
+  'SEO Local',
+  'SEO Orgánico',
+  'Google Ads',
+  'Meta Ads',
+  'Gestión Redes Sociales',
+  'Diseño Web',
+  'Email Marketing',
+  'Consultoría',
+];
+
+const serviciosUsados = ref<string[]>([]);
+const showServiceDropdown = ref(false);
+
+const serviciosSugeridos = computed(() => {
+  const todos = [...PACKS_PREDEFINIDOS];
+  for (const s of serviciosUsados.value) {
+    if (s && !todos.includes(s)) todos.push(s);
+  }
+  const q = (form.value.servicio ?? '').toLowerCase().trim();
+  if (!q) return todos;
+  return todos.filter(s => s.toLowerCase().includes(q));
+});
+
+async function cargarServiciosUsados() {
+  const { data } = await supabase.from('leads').select('servicio');
+  if (data) {
+    const uniq = [...new Set(data.map((r: any) => r.servicio).filter(Boolean))] as string[];
+    serviciosUsados.value = uniq;
+  }
+}
+
+function hideServiceDropdown() {
+  setTimeout(() => { showServiceDropdown.value = false; }, 150);
+}
+
+onMounted(() => {
+  cargarServiciosUsados();
+});
 
 const openNew = () => {
   form.value = emptyForm();
@@ -277,7 +322,7 @@ const formatDate = (iso: string) =>
     </template>
 
     <!-- Modal: Nuevo / Editar Lead -->
-    <div class="modal-overlay" v-if="showModal" @click.self="showModal = false">
+    <div class="modal-overlay" v-if="showModal">
       <div class="modal-box">
         <p class="modal-title">{{ editingId ? 'Editar Lead' : 'Nuevo Lead' }}</p>
 
@@ -313,10 +358,31 @@ const formatDate = (iso: string) =>
               <option>Otro</option>
             </select>
           </div>
-          <div class="form-group">
+          <div class="form-group" style="position:relative;">
             <label>Servicio de interés</label>
-            <input v-model="form.servicio" class="form-input" placeholder="Pack Starter, SEO..." />
+            <input
+              v-model="form.servicio"
+              class="form-input"
+              type="text"
+              placeholder="Pack Starter, SEO Local..."
+              autocomplete="off"
+              @focus="showServiceDropdown = true"
+              @blur="hideServiceDropdown"
+            />
+            <div v-if="showServiceDropdown && serviciosSugeridos.length" class="service-dropdown">
+              <button
+                v-for="s in serviciosSugeridos"
+                :key="s"
+                type="button"
+                class="service-option"
+                @mousedown.prevent="form.servicio = s; showServiceDropdown = false"
+              >{{ s }}</button>
+            </div>
           </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Link propuesta Canva</label>
+          <input v-model="form.link_canva" class="form-input" type="url" placeholder="https://www.canva.com/..." />
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -415,4 +481,32 @@ const formatDate = (iso: string) =>
 .btn-text { background: transparent; border: none; color: var(--color-primary); cursor: pointer; font-size: 0.9rem; }
 .btn-primary { background-color: var(--color-primary); color: #000; font-weight: 700; padding: 0.6rem 1.4rem; border-radius: 6px; border: none; cursor: pointer; }
 .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.service-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 0 0 6px 6px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 100;
+}
+.service-option {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: none;
+  border: none;
+  color: #d4d4d4;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+.service-option:hover {
+  background: #2a2a2a;
+  color: #E3FF04;
+}
 </style>

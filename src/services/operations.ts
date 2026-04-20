@@ -84,6 +84,8 @@ export function useOperationsData() {
   // teamLoad: la carga real (horas tareas) se calcula en la vista desde useTareas()
   const teamLoad = computed(() => equipo.value);
 
+  const loadingGuard = setTimeout(() => { loading.value = false; }, 15_000);
+
   Promise.all([
     supabase
       .from('proyectos')
@@ -106,27 +108,30 @@ export function useOperationsData() {
     equipo.value = (equipoRes.data ?? []) as UsuarioAdmin[];
   })
   .catch(console.error)
-  .finally(() => { loading.value = false; });
+  .finally(() => { clearTimeout(loadingGuard); loading.value = false; });
 
   return { proyectos, equipo, teamLoad, kpis, loading };
 }
 
+function stripProyectoJoins(p: Partial<Proyecto>): Partial<Proyecto> {
+  const { clientes, ...clean } = p as any;
+  return clean;
+}
+
 export async function createProyecto(form: Partial<Proyecto>): Promise<Proyecto> {
-  const { clientes, ...clean } = form as any;
   const { data, error } = await supabase
     .from('proyectos')
-    .insert(clean)
-    .select('*')
+    .insert(stripProyectoJoins(form))
+    .select('*, clientes(nombre)')
     .single();
   if (error) throw error;
   return data as Proyecto;
 }
 
 export async function updateProyecto(id: string, updates: Partial<Proyecto>): Promise<Proyecto> {
-  const { clientes, ...clean } = updates as any;
   const { data, error } = await supabase
     .from('proyectos')
-    .update(clean)
+    .update(stripProyectoJoins(updates))
     .eq('id', id)
     .select('*')
     .single();

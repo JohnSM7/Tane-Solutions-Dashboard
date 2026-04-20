@@ -34,8 +34,7 @@ export function useAlertas() {
           .gt('gmb_unanswered', 0),
         supabase
           .from('tickets')
-          .select('id, asunto, fecha_creacion, clientes(nombre)')
-          .eq('prioridad', 'Alta')
+          .select('id, asunto, prioridad, fecha_creacion, clientes(nombre)')
           .neq('estado', 'Cerrado'),
         supabase
           .from('servidores')
@@ -86,8 +85,8 @@ export function useAlertas() {
         lista.push({
           id: `ticket-${t.id}`,
           tipo: 'soporte',
-          severidad: dias >= 2 ? 'alta' : 'media',
-          titulo: `Ticket alta prioridad: ${t.asunto}`,
+          severidad: t.prioridad === 'Alta' || dias >= 2 ? 'alta' : 'media',
+          titulo: `Ticket ${t.prioridad?.toLowerCase() ?? ''} prioridad: ${t.asunto}`,
           descripcion: `${t.clientes?.nombre ?? '—'} · Abierto hace ${dias} día(s)`,
           enlace: '/support',
           cliente: t.clientes?.nombre,
@@ -126,7 +125,7 @@ export async function fetchAlertasCount(): Promise<number> {
     supabase.from('facturas').select('id', { count: 'exact', head: true }).eq('estado', 'Vencida'),
     supabase.from('proyectos').select('id', { count: 'exact', head: true }).in('estado', ['En riesgo', 'Retrasado', 'Bloqueado']),
     supabase.from('sedes').select('id', { count: 'exact', head: true }).gt('gmb_unanswered', 0),
-    supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('prioridad', 'Alta').neq('estado', 'Cerrado'),
+    supabase.from('tickets').select('id', { count: 'exact', head: true }).neq('estado', 'Cerrado'),
     supabase.from('servidores').select('id', { count: 'exact', head: true }).neq('estado', 'Online'),
   ]);
   return (f.count ?? 0) + (p.count ?? 0) + (s.count ?? 0) + (t.count ?? 0) + (sv.count ?? 0);

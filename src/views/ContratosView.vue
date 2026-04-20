@@ -333,7 +333,7 @@ const exportar = () => exportCsv('contratos.csv', filtered.value.map(c => ({
     </DashboardCard>
 
     <!-- Modal -->
-    <div class="modal-overlay" v-if="showModal" @click.self="showModal = false">
+    <div class="modal-overlay" v-if="showModal">
       <div class="modal-box">
         <p class="modal-title">{{ editingId ? 'Editar Contrato' : 'Nuevo Contrato' }}</p>
 

@@ -1,0 +1,166 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - img "Logo" [ref=e8]
+        - generic [ref=e9]: TANE SOLUTIONS
+      - navigation [ref=e10]:
+        - link "Inicio" [ref=e11] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e12]
+          - generic [ref=e14]: Inicio
+        - link "Alertas 1" [ref=e15] [cursor=pointer]:
+          - /url: /alerts
+          - img [ref=e16]
+          - generic [ref=e18]: Alertas
+          - generic [ref=e19]: "1"
+        - link "Comercial" [ref=e20] [cursor=pointer]:
+          - /url: /commercial
+          - img [ref=e21]
+          - generic [ref=e23]: Comercial
+        - link "Financiero" [ref=e24] [cursor=pointer]:
+          - /url: /financial
+          - img [ref=e25]
+          - generic [ref=e27]: Financiero
+        - link "Operaciones" [ref=e28] [cursor=pointer]:
+          - /url: /operations
+          - img [ref=e29]
+          - generic [ref=e31]: Operaciones
+        - link "Soporte" [ref=e32] [cursor=pointer]:
+          - /url: /support
+          - img [ref=e33]
+          - generic [ref=e35]: Soporte
+        - link "Clientes (Admin)" [ref=e36] [cursor=pointer]:
+          - /url: /clients
+          - img [ref=e37]
+          - generic [ref=e39]: Clientes (Admin)
+        - link "Usuarios" [ref=e40] [cursor=pointer]:
+          - /url: /usuarios
+          - img [ref=e41]
+          - generic [ref=e43]: Usuarios
+        - link "Tareas" [ref=e44] [cursor=pointer]:
+          - /url: /tareas
+          - img [ref=e45]
+          - generic [ref=e47]: Tareas
+        - link "Calendario" [ref=e48] [cursor=pointer]:
+          - /url: /calendario
+          - img [ref=e49]
+          - generic [ref=e51]: Calendario
+        - link "Contratos" [ref=e52] [cursor=pointer]:
+          - /url: /contratos
+          - img [ref=e53]
+          - generic [ref=e55]: Contratos
+      - generic [ref=e56]:
+        - generic [ref=e57]:
+          - generic [ref=e58]: A
+          - generic [ref=e59]:
+            - generic [ref=e60]: AdminTane
+            - generic [ref=e61]: Agencia
+        - generic [ref=e62]:
+          - button "Notificaciones" [ref=e63] [cursor=pointer]:
+            - img [ref=e64]
+          - button "Cerrar Sesión" [ref=e66] [cursor=pointer]:
+            - img [ref=e67]
+    - main [ref=e69]:
+      - generic [ref=e70]:
+        - generic [ref=e71]:
+          - heading "Tablero de Tareas" [level=1] [ref=e73]
+          - button "+ Nueva Tarea" [ref=e74] [cursor=pointer]
+        - generic [ref=e75]:
+          - generic [ref=e76]:
+            - generic [ref=e77]:
+              - generic [ref=e80]: Pendiente
+              - generic [ref=e81]: "0"
+            - generic [ref=e83]: Sin tareas
+            - button "+ Agregar tarea" [ref=e84] [cursor=pointer]
+          - generic [ref=e85]:
+            - generic [ref=e86]:
+              - generic [ref=e89]: En progreso
+              - generic [ref=e90]: "1"
+            - generic [ref=e97]:
+              - generic [ref=e98]:
+                - generic [ref=e99]: Alta
+                - button "×" [ref=e100] [cursor=pointer]
+              - generic [ref=e101]: Diseño Logo Mama Erika
+              - generic [ref=e102]:
+                - generic [ref=e103]: Pisos Erika y Basilio
+                - generic [ref=e104]: 8h
+                - generic [ref=e105]: 30 abr
+            - button "+ Agregar tarea" [ref=e106] [cursor=pointer]
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - generic [ref=e111]: Revisión
+              - generic [ref=e112]: "0"
+            - generic [ref=e150]: Sin tareas
+            - button "+ Agregar tarea" [ref=e115] [cursor=pointer]
+          - generic [ref=e116]:
+            - generic [ref=e117]:
+              - generic [ref=e120]: Completado
+              - generic [ref=e121]: "3"
+            - generic [ref=e122]:
+              - generic [ref=e151]:
+                - generic [ref=e152]:
+                  - generic [ref=e153]: Media
+                  - button "×" [ref=e154] [cursor=pointer]
+                - generic [ref=e155]: Montaje Dashboard Tane
+              - generic [ref=e123]:
+                - generic [ref=e124]:
+                  - generic [ref=e125]: Alta
+                  - button "×" [ref=e126] [cursor=pointer]
+                - generic [ref=e127]: Impresion de Carta BAR SANTOS
+                - generic [ref=e128]:
+                  - generic [ref=e129]: Web Tane Restaurant
+                  - generic [ref=e130]: 4h
+                  - generic [ref=e131]: 07 abr
+              - generic [ref=e132]:
+                - generic [ref=e133]:
+                  - generic [ref=e134]: Alta
+                  - button "×" [ref=e135] [cursor=pointer]
+                - generic [ref=e136]: carta BAR SANTOS
+                - generic [ref=e137]:
+                  - generic [ref=e138]: 8h
+                  - generic [ref=e139]: 07 abr
+            - button "+ Agregar tarea" [ref=e140] [cursor=pointer]
+  - generic [ref=e161]:
+    - generic [ref=e162]:
+      - heading "Editar Tarea" [level=2] [ref=e163]
+      - button "×" [ref=e164] [cursor=pointer]
+    - generic [ref=e165]:
+      - generic [ref=e166]:
+        - generic [ref=e167]: Título *
+        - textbox "Nombre de la tarea" [active] [ref=e168]: Diseño Logo Mama Erika
+      - generic [ref=e169]:
+        - generic [ref=e170]: Descripción
+        - textbox "Descripción opcional" [ref=e171]
+      - generic [ref=e172]:
+        - generic [ref=e173]:
+          - generic [ref=e174]: Estado
+          - combobox [ref=e175] [cursor=pointer]:
+            - option "Pendiente"
+            - option "En progreso" [selected]
+            - option "Revisión"
+            - option "Completado"
+        - generic [ref=e176]:
+          - generic [ref=e177]: Prioridad
+          - combobox [ref=e178] [cursor=pointer]:
+            - option "Alta" [selected]
+            - option "Media"
+            - option "Baja"
+      - generic [ref=e179]:
+        - generic [ref=e180]: Proyecto
+        - combobox [ref=e181] [cursor=pointer]:
+          - option "Sin proyecto"
+          - option "Gestión Redes (Goya)"
+          - option "Web Tane Restaurant"
+          - option "Pisos Erika y Basilio" [selected]
+          - option "Dashboard Tane Solutions"
+      - generic [ref=e182]:
+        - generic [ref=e183]:
+          - generic [ref=e184]: Horas estimadas
+          - spinbutton [ref=e185]: "8"
+        - generic [ref=e186]:
+          - generic [ref=e187]: Fecha límite
+          - textbox [ref=e188]: 2026-04-30
+      - generic [ref=e189]:
+        - button "Cancelar" [ref=e190] [cursor=pointer]
+        - button "Guardar cambios" [ref=e191] [cursor=pointer]

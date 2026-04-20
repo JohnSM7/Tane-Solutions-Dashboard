@@ -1,0 +1,17 @@
+- main [ref=e4]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - img "Tane Solutions" [ref=e8]
+      - heading "Tane Solutions" [level=1] [ref=e9]
+      - paragraph [ref=e10]: Portal de Acceso
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]: Correo Electrónico
+        - textbox "ejemplo@correo.com" [ref=e14]: admin@tanesolutions.com
+      - generic [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]: Contraseña
+          - button "¿La has olvidado?" [ref=e18] [cursor=pointer]
+        - textbox "••••••••" [ref=e19]: Gestion2k25
+      - paragraph [ref=e24]: Credenciales no válidas. 1 intento(s) restante(s) antes del bloqueo temporal.
+      - button "Iniciar Sesión" [ref=e20] [cursor=pointer]

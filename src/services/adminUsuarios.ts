@@ -18,7 +18,20 @@ export type UsuarioCompleto = {
 /** Llama a la Edge Function admin-users */
 async function callAdminFn(body: Record<string, unknown>) {
   const { data, error } = await supabase.functions.invoke('admin-users', { body });
-  if (error) throw new Error(error.message);
+  if (error) {
+    // Intentar leer el mensaje real del cuerpo de la respuesta
+    try {
+      const ctx = (error as any).context;
+      if (ctx instanceof Response) {
+        const clone = ctx.clone();
+        const errBody = await clone.json().catch(() => null);
+        if (errBody?.error) throw new Error(errBody.error);
+      }
+    } catch (inner) {
+      if (inner instanceof Error) throw inner;
+    }
+    throw new Error(error.message);
+  }
   if (data?.error) throw new Error(data.error);
   return data;
 }
@@ -64,26 +77,25 @@ export function useUsuariosAdmin() {
 
 export async function crearUsuario(form: {
   email: string;
-  password: string;
   nombre: string;
   rol: 'ADMIN' | 'CLIENT';
   cliente_id?: string | null;
   horas_disponibles_semana?: number;
-}): Promise<UsuarioCompleto> {
+  redirectTo?: string;
+}): Promise<{ usuario: UsuarioCompleto; setupLink: string | null }> {
   const result = await callAdminFn({ action: 'create', ...form });
-  return result.usuario as UsuarioCompleto;
+  return { usuario: result.usuario as UsuarioCompleto, setupLink: result.setupLink ?? null };
 }
 
 export async function eliminarUsuario(userId: string): Promise<void> {
   await callAdminFn({ action: 'delete', userId });
 }
 
-export async function enviarResetPassword(email: string): Promise<void> {
-  await callAdminFn({
-    action: 'reset_password',
-    email,
-    redirectTo: `${window.location.origin}/update-password`,
-  });
+export async function enviarResetPassword(email: string, rol: 'ADMIN' | 'CLIENT'): Promise<void> {
+  const redirectTo = rol === 'CLIENT'
+    ? 'https://clientes.tanesolutions.com/update-password'
+    : 'https://dashboard.tanesolutions.com/update-password';
+  await callAdminFn({ action: 'reset_password', email, redirectTo });
 }
 
 export async function actualizarEmailUsuario(userId: string, email: string): Promise<void> {

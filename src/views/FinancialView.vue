@@ -7,13 +7,15 @@ import {
   createFactura, updateFactura, deleteFactura,
   createProyectoRentabilidad, updateProyectoRentabilidad, deleteProyectoRentabilidad,
   createFacturasFromPlan, generateInvoicePDF,
-  PLANES_PAGO, TIPOS_IVA, type Factura, type ProyectoRentabilidad,
+  createGasto, deleteGasto,
+  PLANES_PAGO, TIPOS_IVA, CATEGORIAS_GASTO,
+  type Factura, type ProyectoRentabilidad, type Gasto,
 } from '../services/financial';
 import { useClientsList } from '../services/clients';
 import { exportCsv } from '../utils/exportCsv';
 import { supabase } from '../supabase';
 
-const { facturas, proyectos, proyectosConFacturas, kpis, monthlyBilling, loading } = useFinancialData();
+const { facturas, proyectos, gastos, proyectosConFacturas, kpis, monthlyBilling, loading } = useFinancialData();
 const { clients } = useClientsList();
 
 const exportFacturas = () => exportCsv('facturas.csv', facturas.value.map(f => ({
@@ -267,6 +269,36 @@ const downloadPDF = async (f: Factura) => {
   }
 };
 
+// ── Gastos ────────────────────────────────────────────────────────────────────
+const gastoFormVisible = ref<string | null>(null); // proyecto_id activo o null
+const savingGasto = ref(false);
+const gastoForm = ref<{ concepto: string; importe: number; categoria: string; fecha: string }>({ concepto: '', importe: 0, categoria: 'Otro', fecha: new Date().toISOString().split('T')[0] as string });
+
+const openGastoForm = (proyectoId: string) => {
+  gastoFormVisible.value = proyectoId;
+  gastoForm.value = { concepto: '', importe: 0, categoria: 'Otro', fecha: new Date().toISOString().split('T')[0] as string };
+};
+
+const saveGasto = async (proyectoId: string) => {
+  if (!gastoForm.value.concepto || gastoForm.value.importe <= 0) return;
+  savingGasto.value = true;
+  try {
+    const created = await createGasto({ proyecto_id: proyectoId, ...gastoForm.value });
+    gastos.value.unshift(created);
+    gastoFormVisible.value = null;
+  } catch (e: any) {
+    alert('Error al guardar el gasto: ' + (e.message ?? ''));
+  } finally {
+    savingGasto.value = false;
+  }
+};
+
+const removeGasto = async (g: Gasto) => {
+  if (!confirm(`¿Eliminar gasto "${g.concepto}"?`)) return;
+  await deleteGasto(g.id);
+  gastos.value = gastos.value.filter(x => x.id !== g.id);
+};
+
 // ── Utils ─────────────────────────────────────────────────────────────────────
 const formatEur = (n: number) =>
   new Intl.NumberFormat('es-ES').format(n) + ' €';
@@ -337,13 +369,14 @@ const rentabilidadClientes = computed(() => {
     if (f.estado === 'Pagada') entry.cobrado += f.importe;
   }
 
-  for (const p of proyectos.value) {
+  for (const p of proyectosConFacturas.value) {
     if (!p.cliente_id) continue;
     if (!map.has(p.cliente_id)) {
       const nombre = p.clientes?.nombre ?? p.cliente_id;
       map.set(p.cliente_id, { nombre, facturado: 0, cobrado: 0, coste: 0 });
     }
-    map.get(p.cliente_id)!.coste += p.coste ?? 0;
+    const gastosExtras = p.gastos.reduce((s, g) => s + g.importe, 0);
+    map.get(p.cliente_id)!.coste += (p.coste ?? 0) + gastosExtras;
   }
 
   return [...map.entries()]
@@ -513,8 +546,11 @@ const rentabilidadClientes = computed(() => {
               </div>
             </div>
 
-            <!-- Facturas del proyecto (expandible) -->
+            <!-- Facturas + Gastos del proyecto (expandible) -->
             <div v-if="expandedProjectId === p.id" class="pb-facturas">
+
+              <!-- Facturas -->
+              <p class="pb-section-label">Facturas</p>
               <div v-if="p.facturas.length === 0" class="empty-state-inline">
                 Sin facturas vinculadas.
                 <button class="btn-link" @click="openNewFactura">Añadir manualmente</button>
@@ -546,6 +582,67 @@ const rentabilidadClientes = computed(() => {
                   </div>
                 </div>
               </div>
+
+              <!-- ── Gastos ── -->
+              <div class="gastos-section">
+                <div class="gastos-header">
+                  <p class="pb-section-label">Gastos del Proyecto</p>
+                  <button class="btn-add-gasto" @click.stop="gastoFormVisible === p.id ? gastoFormVisible = null : openGastoForm(p.id)">
+                    {{ gastoFormVisible === p.id ? '✕ Cancelar' : '+ Añadir Gasto' }}
+                  </button>
+                </div>
+
+                <!-- Formulario inline de gasto -->
+                <div v-if="gastoFormVisible === p.id" class="gasto-form">
+                  <input v-model="gastoForm.concepto" class="form-input-sm" placeholder="Concepto (ej. Licencia Canva)" />
+                  <input v-model.number="gastoForm.importe" type="number" min="0.01" step="0.01" class="form-input-sm w-100" placeholder="Importe €" />
+                  <select v-model="gastoForm.categoria" class="form-input-sm">
+                    <option v-for="cat in CATEGORIAS_GASTO" :key="cat" :value="cat">{{ cat }}</option>
+                  </select>
+                  <input v-model="gastoForm.fecha" type="date" class="form-input-sm" />
+                  <button
+                    class="btn-save-gasto"
+                    @click="saveGasto(p.id)"
+                    :disabled="savingGasto || !gastoForm.concepto || gastoForm.importe <= 0"
+                  >
+                    {{ savingGasto ? '...' : 'Guardar' }}
+                  </button>
+                </div>
+
+                <!-- Lista de gastos -->
+                <div v-if="p.gastos.length === 0 && gastoFormVisible !== p.id" class="empty-state-inline muted">
+                  Sin gastos registrados para este proyecto.
+                </div>
+                <div v-else-if="p.gastos.length > 0" class="gastos-list">
+                  <div v-for="g in p.gastos" :key="g.id" class="gasto-row">
+                    <span class="gasto-cat-badge">{{ g.categoria }}</span>
+                    <span class="gasto-concepto">{{ g.concepto }}</span>
+                    <span class="gasto-fecha muted">{{ formatDate(g.fecha) }}</span>
+                    <span class="gasto-importe">−{{ formatEur(g.importe) }}</span>
+                    <button class="btn-icon-text danger" @click="removeGasto(g)" title="Eliminar">🗑️</button>
+                  </div>
+                </div>
+
+                <!-- Resumen de rentabilidad real -->
+                <div class="rentabilidad-real">
+                  <div class="rr-row">
+                    <span>Cobrado</span>
+                    <span class="rr-val positive">+{{ formatEur(p.cobrado) }}</span>
+                  </div>
+                  <div class="rr-row">
+                    <span>Gastos reales</span>
+                    <span class="rr-val negative">−{{ formatEur(p.totalGastos) }}</span>
+                  </div>
+                  <div class="rr-divider"></div>
+                  <div class="rr-row rr-total">
+                    <span>Beneficio Neto Real</span>
+                    <span class="rr-val" :class="p.beneficioNeto >= 0 ? 'positive' : 'negative'">
+                      {{ p.beneficioNeto >= 0 ? '+' : '' }}{{ formatEur(p.beneficioNeto) }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
             </div>
 
           </div>
@@ -588,7 +685,7 @@ const rentabilidadClientes = computed(() => {
     </template>
 
     <!-- ── Modal: Nuevo Proyecto ─────────────────────────────────────────────── -->
-    <div class="modal-overlay" v-if="showPrModal" @click.self="showPrModal = false">
+    <div class="modal-overlay" v-if="showPrModal">
       <div class="modal-box">
         <p class="modal-title">{{ editingPrId ? 'Editar Proyecto' : 'Nuevo Proyecto' }}</p>
 
@@ -682,7 +779,7 @@ const rentabilidadClientes = computed(() => {
     </div>
 
     <!-- ── Modal: Factura manual ─────────────────────────────────────────────── -->
-    <div class="modal-overlay" v-if="showFacturaModal" @click.self="showFacturaModal = false">
+    <div class="modal-overlay" v-if="showFacturaModal">
       <div class="modal-box">
         <p class="modal-title">{{ editingFacturaId ? 'Editar Factura' : 'Nueva Factura Manual' }}</p>
         <div class="form-group">
@@ -991,4 +1088,133 @@ const rentabilidadClientes = computed(() => {
 .custom-plan-total { font-size: 0.8rem; text-align: right; color: var(--color-text-muted); margin-top: 0.25rem; }
 .custom-plan-total.error { color: #f87171; }
 .custom-plan-total strong { color: var(--color-text-light); }
+
+/* ── Gastos ───────────────────────────────────────────────────────────────── */
+.pb-section-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--color-text-muted);
+  margin: 0 0 0.6rem;
+}
+.gastos-section {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.gastos-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.gastos-header .pb-section-label { margin: 0; }
+.btn-add-gasto {
+  background: transparent;
+  border: 1px dashed var(--color-border);
+  color: var(--color-primary);
+  padding: 0.3rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: all 0.2s;
+}
+.btn-add-gasto:hover { background: rgba(227,255,4,0.05); border-color: var(--color-primary); }
+
+/* Formulario inline */
+.gasto-form {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  background: rgba(0,0,0,0.25);
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+}
+.form-input-sm {
+  background: var(--color-bg-lighter);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-light);
+  padding: 0.45rem 0.7rem;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  outline: none;
+  color-scheme: dark;
+  flex: 1;
+  min-width: 120px;
+}
+.form-input-sm:focus { border-color: var(--color-primary); }
+.form-input-sm.w-100 { max-width: 110px; min-width: 90px; flex: none; }
+.btn-save-gasto {
+  background: var(--color-primary);
+  color: #000;
+  font-weight: 700;
+  padding: 0.45rem 1rem;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+.btn-save-gasto:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Lista de gastos */
+.gastos-list { display: flex; flex-direction: column; gap: 0.3rem; }
+.gasto-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255,68,68,0.04);
+  border: 1px solid rgba(255,68,68,0.1);
+  border-radius: 6px;
+  font-size: 0.88rem;
+}
+.gasto-cat-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  background: rgba(255,165,0,0.12);
+  color: #ffa500;
+  border-radius: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.gasto-concepto { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gasto-fecha { font-size: 0.8rem; white-space: nowrap; flex-shrink: 0; }
+.gasto-importe { font-weight: 700; color: #f87171; white-space: nowrap; flex-shrink: 0; }
+
+/* Resumen rentabilidad real */
+.rentabilidad-real {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.rr-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+.rr-val { font-weight: 700; font-size: 0.95rem; }
+.rr-val.positive { color: #4ade80; }
+.rr-val.negative { color: #f87171; }
+.rr-divider { height: 1px; background: var(--color-border); margin: 0.2rem 0; }
+.rr-total { font-size: 1rem; font-weight: 700; color: var(--color-text-light); }
+.rr-total .rr-val { font-size: 1.1rem; }
+
+@media (max-width: 600px) {
+  .gasto-form { flex-direction: column; }
+  .form-input-sm.w-100 { max-width: 100%; }
+  .gasto-row { flex-wrap: wrap; }
+}
 </style>

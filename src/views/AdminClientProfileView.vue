@@ -3,15 +3,18 @@ import { ref, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import DashboardCard from '../components/DashboardCard.vue';
 import ClientReportGenerator from '../components/ClientReportGenerator.vue';
+import ClientReportModule from '../components/ClientReportModule.vue';
 import { useClientProfile, computeHealthScore, healthColor, healthLabel, type Sede } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
 import { listarInformes, eliminarInforme, type InformeGuardado } from '../services/reportes';
 import { useGmbHistorico, tomarSnapshot } from '../services/gmbHistorico';
 import GmbChart from '../components/GmbChart.vue';
 import { generarInformeMensualPDF } from '../services/informeMensual';
+import { useToast } from '../composables/useToast';
 
 const route = useRoute();
 const clientId = route.params.id as string;
+const toast = useToast();
 const {
   clientData, facturas, proyectos, sedes, documentos, usuarios,
   financials, loading,
@@ -111,6 +114,17 @@ const confirmDeleteSede = async (s: Sede) => {
   }
 };
 
+// ── Download documentos ───────────────────────────────────────────────────────
+const downloadDoc = async (url: string, nombre: string) => {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = nombre;
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
 // ── Upload documentos ─────────────────────────────────────────────────────────
 const fileInput = ref<HTMLInputElement | null>(null);
 const uploading = ref(false);
@@ -138,6 +152,79 @@ const confirmDeleteDoc = async (doc: any) => {
   if (!confirm(`¿Eliminar "${doc.nombre}"?`)) return;
   await deleteDocumento(doc);
 };
+
+// ── Links de cliente ──────────────────────────────────────────────────────────
+import { supabase } from '../supabase';
+
+type LinkCliente = { id: string; titulo: string; url: string; descripcion: string | null };
+const links = ref<LinkCliente[]>([]);
+const linkForm = ref({ titulo: '', url: '', descripcion: '' });
+const savingLink = ref(false);
+const showLinkForm = ref(false);
+
+const loadLinks = async () => {
+  const { data } = await supabase.from('links_cliente').select('*').eq('cliente_id', clientId).order('created_at', { ascending: false });
+  links.value = (data ?? []) as LinkCliente[];
+};
+
+async function notifyLinkToClientUsers(cId: string, cName: string, link: LinkCliente) {
+  try {
+    const { data, error } = await supabase.functions.invoke('admin-users', {
+      body: {
+        action:      'notify-link',
+        cliente_id:  cId,
+        clientName:  cName,
+        titulo:      link.titulo,
+        url:         link.url,
+        descripcion: link.descripcion ?? null,
+      },
+    });
+    if (error) {
+      console.error('[notify-link]', error);
+      toast.success('Link guardado. (No se pudo enviar la notificación por email)');
+    } else if ((data?.sent ?? 0) > 0) {
+      toast.success(`Link guardado. Notificación enviada a ${data.sent} usuario${data.sent > 1 ? 's' : ''}.`);
+    } else {
+      toast.success('Link guardado. (Sin usuarios con email para notificar)');
+    }
+  } catch (err) {
+    console.error('[notify-link]', err);
+    toast.success('Link guardado correctamente.');
+  }
+}
+
+const saveLink = async () => {
+  if (!linkForm.value.titulo.trim() || !linkForm.value.url.trim()) return;
+  savingLink.value = true;
+  try {
+    const { data, error } = await supabase.from('links_cliente').insert({
+      cliente_id: clientId,
+      titulo: linkForm.value.titulo.trim(),
+      url: linkForm.value.url.trim(),
+      descripcion: linkForm.value.descripcion.trim() || null,
+    }).select().single();
+    if (error) throw error;
+    links.value.unshift(data as LinkCliente);
+
+    // Notificar a todos los usuarios CLIENT del cliente
+    const linkData   = data as LinkCliente;
+    const clientName = clientData.value?.name ?? '';
+    notifyLinkToClientUsers(clientId, clientName, linkData);
+
+    linkForm.value = { titulo: '', url: '', descripcion: '' };
+    showLinkForm.value = false;
+  } finally {
+    savingLink.value = false;
+  }
+};
+
+const deleteLink = async (id: string) => {
+  if (!confirm('¿Eliminar este link?')) return;
+  await supabase.from('links_cliente').delete().eq('id', id);
+  links.value = links.value.filter(l => l.id !== id);
+};
+
+loadLinks();
 
 // ── Historial de Informes ───────────────────────────────────────────────────
 const informesGuardados = ref<InformeGuardado[]>([]);
@@ -347,8 +434,40 @@ const formatDate = (iso: string) =>
                   </div>
                 </div>
                 <div class="doc-actions">
-                  <a :href="doc.url" target="_blank" class="btn-icon" title="Ver/Descargar">⬇️</a>
+                  <button class="btn-icon" title="Descargar" @click="downloadDoc(doc.url, doc.nombre)">⬇️</button>
                   <button class="btn-icon delete" @click="confirmDeleteDoc(doc)" title="Eliminar">🗑️</button>
+                </div>
+              </li>
+            </ul>
+          </DashboardCard>
+
+          <!-- Links de cliente -->
+          <DashboardCard title="Links Compartidos">
+            <template #actions>
+              <button class="btn-outline" @click="showLinkForm = !showLinkForm">{{ showLinkForm ? 'Cancelar' : '+ Añadir link' }}</button>
+            </template>
+
+            <div v-if="showLinkForm" class="link-form">
+              <input v-model="linkForm.titulo" class="form-input" placeholder="Título (ej: Carpeta Drive — Logos)" />
+              <input v-model="linkForm.url" class="form-input" placeholder="URL (https://...)" type="url" />
+              <input v-model="linkForm.descripcion" class="form-input" placeholder="Descripción opcional" />
+              <button class="btn-primary" @click="saveLink" :disabled="savingLink">{{ savingLink ? 'Guardando...' : 'Guardar link' }}</button>
+            </div>
+
+            <div v-if="links.length === 0 && !showLinkForm" class="empty-state">Sin links compartidos</div>
+            <ul v-else class="docs-list">
+              <li v-for="l in links" :key="l.id" class="doc-item">
+                <div class="doc-info">
+                  <span class="doc-icon">🔗</span>
+                  <div class="doc-meta">
+                    <span class="doc-name">{{ l.titulo }}</span>
+                    <span v-if="l.descripcion" class="doc-details">{{ l.descripcion }}</span>
+                    <a :href="l.url" target="_blank" rel="noopener" class="link-url">{{ l.url }}</a>
+                  </div>
+                </div>
+                <div class="doc-actions">
+                  <a :href="l.url" target="_blank" rel="noopener" class="btn-icon" title="Abrir">↗️</a>
+                  <button class="btn-icon delete" @click="deleteLink(l.id)" title="Eliminar">🗑️</button>
                 </div>
               </li>
             </ul>
@@ -514,7 +633,7 @@ const formatDate = (iso: string) =>
     </template>
     
     <!-- Modal: Detalle del Informe -->
-    <div v-if="selectedInforme" class="modal-overlay report-detail-overlay" @click.self="selectedInforme = null">
+    <div v-if="selectedInforme" class="modal-overlay report-detail-overlay">
       <div class="modal-box report-modal">
         <div class="report-modal-header">
           <div class="report-modal-title">
@@ -599,7 +718,7 @@ const formatDate = (iso: string) =>
     <div v-else class="loading-state">Cliente no encontrado.</div>
 
     <!-- Modal: Editar perfil -->
-    <div class="modal-overlay" v-if="showEditModal" @click.self="showEditModal = false">
+    <div class="modal-overlay" v-if="showEditModal">
       <div class="modal-box">
         <p class="modal-title">Editar Perfil del Cliente</p>
         <div class="form-group"><label>Nombre *</label><input v-model="editForm.name" class="form-input" /></div>
@@ -625,7 +744,7 @@ const formatDate = (iso: string) =>
     </div>
 
     <!-- Modal: Añadir / Editar sede -->
-    <div class="modal-overlay" v-if="showSedeModal" @click.self="showSedeModal = false">
+    <div class="modal-overlay" v-if="showSedeModal">
       <div class="modal-box">
         <p class="modal-title">{{ editingSedeId !== null ? 'Editar Sede' : 'Añadir Sede' }}</p>
         <div class="form-group"><label>Nombre de la sede *</label><input v-model="sedeForm.nombre" class="form-input" /></div>
@@ -741,6 +860,8 @@ const formatDate = (iso: string) =>
 /* Docs */
 .upload-area { border: 2px dashed var(--color-border); padding: 1.5rem; text-align: center; border-radius: 8px; margin-bottom: 1rem; cursor: pointer; transition: all 0.2s; }
 .upload-area:hover, .upload-area.uploading { border-color: var(--color-primary); background: rgba(227,255,4,0.03); }
+.link-form { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1rem; padding: 1rem; background: var(--color-bg-lighter); border-radius: 8px; border: 1px solid var(--color-border); }
+.link-url { font-size: 0.78rem; color: var(--color-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
 .hidden-input { display: none; }
 .upload-icon { font-size: 1.8rem; margin-bottom: 0.3rem; }
 .upload-hint { font-size: 0.8rem; color: var(--color-text-muted); display: block; margin-top: 0.3rem; }

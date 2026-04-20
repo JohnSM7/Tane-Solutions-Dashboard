@@ -12,6 +12,7 @@ export type Ticket = {
   fecha_primera_respuesta: string | null;
   fecha_cierre: string | null;
   satisfaccion: number | null;
+  respuesta_cierre: string | null;
   clientes?: { nombre: string };
 };
 
@@ -86,6 +87,8 @@ export function useSupportData() {
     ];
   });
 
+  const loadingGuard = setTimeout(() => { loading.value = false; }, 15_000);
+
   Promise.all([
     supabase
       .from('tickets')
@@ -100,7 +103,7 @@ export function useSupportData() {
     servidores.value = (servidoresRes.data ?? []) as Servidor[];
   })
   .catch(console.error)
-  .finally(() => { loading.value = false; });
+  .finally(() => { clearTimeout(loadingGuard); loading.value = false; });
 
   return { tickets, servidores, kpis, loading };
 }
@@ -157,15 +160,16 @@ export function useClientTickets(clientId: string) {
   const tickets = ref<Ticket[]>([]);
   const loading = ref(true);
 
-  Promise.resolve(
+  const reload = () => Promise.resolve(
     supabase
       .from('tickets')
       .select('*')
       .eq('cliente_id', clientId)
       .order('fecha_creacion', { ascending: false })
-  ).then(({ data }) => {
-    tickets.value = (data ?? []) as Ticket[];
-  }).finally(() => { loading.value = false; });
+  ).then(({ data }) => { tickets.value = (data ?? []) as Ticket[]; })
+   .finally(() => { loading.value = false; });
 
-  return { tickets, loading };
+  reload();
+
+  return { tickets, loading, reload };
 }
