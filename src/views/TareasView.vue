@@ -4,11 +4,20 @@
     <div class="page-header">
       <div class="header-left">
         <h1 class="page-title">Tablero de Tareas</h1>
-        <span v-if="pendingCount > 0" class="pending-badge">{{ pendingCount }} pendiente{{ pendingCount !== 1 ? 's' : '' }}</span>
+        <span v-if="pendingCount > 0" class="pending-badge">
+          {{ pendingCount }} pendiente{{ pendingCount !== 1 ? 's' : '' }}
+        </span>
       </div>
-      <button class="btn-primary" @click="openCreateModal('backlog')">
-        + Nueva Tarea
-      </button>
+      <div class="header-actions">
+        <button
+          class="btn-toggle"
+          :class="{ active: misTareasFilter }"
+          @click="misTareasFilter = !misTareasFilter"
+        >
+          {{ misTareasFilter ? 'Mis tareas' : 'Todas las tareas' }}
+        </button>
+        <button class="btn-primary" @click="openCreateModal('backlog')">+ Nueva Tarea</button>
+      </div>
     </div>
 
     <!-- Kanban Board -->
@@ -23,122 +32,103 @@
         <div class="column-header">
           <div class="column-header-left">
             <span class="color-dot" :style="{ background: col.color }"></span>
-            <span
-              class="column-label"
-              :class="{ 'dark-text': col.key === 'en_progreso' }"
-              :style="col.key === 'en_progreso' ? { background: col.color, color: '#000' } : {}"
-            >{{ col.label }}</span>
+            <span class="column-label">{{ col.label }}</span>
           </div>
           <span class="count-badge">{{ getColumnTareas(col.key).length }}</span>
         </div>
 
-        <!-- Cards List -->
+        <!-- Drop Zone -->
         <div
           class="cards-list"
-          :class="{ 'drag-over': dragOverCol === col.key }"
-          @dragover.prevent="onDragOver(col.key)"
-          @dragleave="onDragLeave"
+          :class="{ 'drag-over': dragOverColumn === col.key }"
+          @dragover.prevent="dragOverColumn = col.key"
+          @dragleave="onDragLeave(col.key, $event)"
           @drop.prevent="onDrop(col.key)"
         >
           <div
             v-for="tarea in getColumnTareas(col.key)"
             :key="tarea.id"
             class="task-card"
-            :class="{ 'dragging': draggingId === tarea.id }"
+            :class="{ dragging: draggedId === tarea.id }"
             draggable="true"
-            @dragstart="onDragStart(tarea)"
-            @dragend="onDragEnd"
+            @dragstart="onDragStart(tarea.id)"
+            @dragend="draggedId = null; dragOverColumn = null"
             @click="openEditModal(tarea)"
           >
-            <!-- Card Top Row -->
+            <!-- Top row -->
             <div class="card-top-row">
               <span
                 class="priority-badge"
-                :style="{ background: PRIORIDAD_COLOR[tarea.prioridad] + '22', color: PRIORIDAD_COLOR[tarea.prioridad], borderColor: PRIORIDAD_COLOR[tarea.prioridad] + '55' }"
+                :style="{
+                  background: PRIORIDAD_COLOR[tarea.prioridad] + '22',
+                  color: PRIORIDAD_COLOR[tarea.prioridad],
+                  borderColor: PRIORIDAD_COLOR[tarea.prioridad] + '55',
+                }"
               >{{ tarea.prioridad }}</span>
-              <button
-                class="delete-btn"
-                title="Eliminar tarea"
-                @click.stop="confirmDelete(tarea)"
-              >×</button>
+              <div class="card-btns" @click.stop>
+                <button class="hours-btn" title="Registrar horas" @click.stop="openHorasModal(tarea)">⏱</button>
+                <button class="delete-btn" title="Eliminar tarea" @click.stop="confirmDelete(tarea)">×</button>
+              </div>
             </div>
 
             <!-- Title -->
             <div class="card-title">{{ tarea.titulo }}</div>
 
-            <!-- Meta info -->
+            <!-- Meta -->
             <div class="card-meta">
-              <span v-if="tarea.proyectos?.nombre" class="meta-tag project-tag">
-                {{ tarea.proyectos.nombre }}
+              <span v-if="tarea.proyectos?.nombre" class="meta-tag project-tag">{{ tarea.proyectos.nombre }}</span>
+              <span v-if="tarea.horas_estimadas && tarea.horas_estimadas > 0" class="meta-tag hours-tag estimated">
+                {{ tarea.horas_estimadas }}h est.
               </span>
-              <span v-if="tarea.horas_estimadas && tarea.horas_estimadas > 0" class="meta-tag hours-tag">
-                {{ tarea.horas_estimadas }}h
+              <span v-if="horasRealesMap.get(tarea.id)" class="meta-tag hours-tag real">
+                {{ horasRealesMap.get(tarea.id) }}h real
               </span>
               <span
                 v-if="tarea.fecha_limite"
                 class="meta-tag date-tag"
-                :class="{ 'overdue': isOverdue(tarea.fecha_limite) }"
-              >
-                {{ formatDate(tarea.fecha_limite) }}
+                :class="{ overdue: isOverdue(tarea.fecha_limite) }"
+              >{{ formatDate(tarea.fecha_limite) }}</span>
+            </div>
+
+            <!-- Assignee -->
+            <div v-if="tarea.asignado_a" class="card-footer">
+              <span class="assignee-badge" :title="getUsuarioNombre(tarea.asignado_a)">
+                {{ getUsuarioInitials(tarea.asignado_a) }}
               </span>
             </div>
           </div>
 
-          <!-- Empty state -->
           <div v-if="getColumnTareas(col.key).length === 0" class="empty-column">
-            Sin tareas
+            Arrastra aquí
           </div>
         </div>
 
-        <!-- Add button -->
-        <button class="add-card-btn" @click="openCreateModal(col.key)">
-          + Agregar tarea
-        </button>
+        <button class="add-card-btn" @click="openCreateModal(col.key)">+ Agregar tarea</button>
       </div>
     </div>
 
     <!-- Create / Edit Modal -->
     <Teleport to="body">
-      <div v-if="showModal" class="modal-overlay">
+      <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
         <div class="modal">
           <div class="modal-header">
             <h2 class="modal-title">{{ isEditing ? 'Editar Tarea' : 'Nueva Tarea' }}</h2>
             <button class="modal-close" @click="closeModal">×</button>
           </div>
-
           <form class="modal-form" @submit.prevent="submitForm">
-            <!-- Título -->
             <div class="form-group">
               <label class="form-label">Título <span class="required">*</span></label>
-              <input
-                v-model="form.titulo"
-                class="form-input"
-                type="text"
-                placeholder="Nombre de la tarea"
-                required
-                autofocus
-              />
+              <input v-model="form.titulo" class="form-input" type="text" placeholder="Nombre de la tarea" required autofocus />
             </div>
-
-            <!-- Descripción -->
             <div class="form-group">
               <label class="form-label">Descripción</label>
-              <textarea
-                v-model="form.descripcion"
-                class="form-input form-textarea"
-                placeholder="Descripción opcional"
-                rows="3"
-              ></textarea>
+              <textarea v-model="form.descripcion" class="form-input form-textarea" placeholder="Descripción opcional" rows="3"></textarea>
             </div>
-
-            <!-- Estado & Prioridad row -->
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Estado</label>
                 <select v-model="form.estado" class="form-input form-select">
-                  <option v-for="col in COLUMNAS" :key="col.key" :value="col.key">
-                    {{ col.label }}
-                  </option>
+                  <option v-for="col in COLUMNAS" :key="col.key" :value="col.key">{{ col.label }}</option>
                 </select>
               </div>
               <div class="form-group">
@@ -150,42 +140,30 @@
                 </select>
               </div>
             </div>
-
-            <!-- Proyecto -->
             <div class="form-group">
               <label class="form-label">Proyecto</label>
               <select v-model="form.proyecto_id" class="form-input form-select">
                 <option :value="null">Sin proyecto</option>
-                <option v-for="p in proyectos" :key="p.id" :value="p.id">
-                  {{ p.nombre }}
-                </option>
+                <option v-for="p in proyectos" :key="p.id" :value="p.id">{{ p.nombre }}</option>
               </select>
             </div>
-
-            <!-- Horas & Fecha row -->
+            <div class="form-group">
+              <label class="form-label">Asignado a</label>
+              <select v-model="form.asignado_a" class="form-input form-select">
+                <option :value="null">Sin asignar</option>
+                <option v-for="u in equipo" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+              </select>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Horas estimadas</label>
-                <input
-                  v-model.number="form.horas_estimadas"
-                  class="form-input"
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  placeholder="0"
-                />
+                <input v-model.number="form.horas_estimadas" class="form-input" type="number" min="0" step="0.5" placeholder="0" />
               </div>
               <div class="form-group">
                 <label class="form-label">Fecha límite</label>
-                <input
-                  v-model="form.fecha_limite"
-                  class="form-input"
-                  type="date"
-                />
+                <input v-model="form.fecha_limite" class="form-input" type="date" />
               </div>
             </div>
-
-            <!-- Buttons -->
             <div class="modal-actions">
               <button type="button" class="btn-secondary" @click="closeModal">Cancelar</button>
               <button type="submit" class="btn-primary" :disabled="saving">
@@ -193,6 +171,71 @@
               </button>
             </div>
           </form>
+        </div>
+      </div>
+
+      <!-- Hours Modal -->
+      <div v-if="showHorasModal && horasModalTarea" class="modal-overlay" @click.self="closeHorasModal">
+        <div class="modal modal-horas">
+          <div class="modal-header">
+            <div>
+              <h2 class="modal-title">Registro de horas</h2>
+              <p class="modal-subtitle">{{ horasModalTarea.titulo }}</p>
+            </div>
+            <button class="modal-close" @click="closeHorasModal">×</button>
+          </div>
+
+          <!-- Summary -->
+          <div class="horas-summary">
+            <div class="summary-card">
+              <span class="summary-label">Estimadas</span>
+              <span class="summary-value">{{ horasModalTarea.horas_estimadas ?? 0 }}h</span>
+            </div>
+            <div class="summary-card">
+              <span class="summary-label">Reales</span>
+              <span class="summary-value real">{{ horasTotalesModal }}h</span>
+            </div>
+            <div class="summary-card">
+              <span class="summary-label">Desviación</span>
+              <span class="summary-value" :class="desviacionClass">{{ desviacionModal }}</span>
+            </div>
+          </div>
+
+          <!-- Add entry form -->
+          <form class="horas-form" @submit.prevent="submitRegistroHoras">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Fecha</label>
+                <input v-model="horasForm.fecha" type="date" class="form-input" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Horas</label>
+                <input v-model.number="horasForm.horas" type="number" class="form-input" min="0.25" step="0.25" placeholder="0" required />
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Descripción</label>
+              <input v-model="horasForm.descripcion" type="text" class="form-input" placeholder="Qué se hizo..." />
+            </div>
+            <button type="submit" class="btn-primary btn-sm" :disabled="savingHoras">
+              {{ savingHoras ? 'Guardando...' : '+ Añadir registro' }}
+            </button>
+          </form>
+
+          <!-- History -->
+          <div class="horas-list">
+            <div v-if="horasRegistros.length === 0" class="empty-horas">Sin registros aún</div>
+            <div v-for="r in horasRegistros" :key="r.id" class="horas-row">
+              <div class="horas-row-left">
+                <span class="horas-fecha">{{ formatDate(r.fecha) }}</span>
+                <span class="horas-desc">{{ r.descripcion || '—' }}</span>
+              </div>
+              <div class="horas-row-right">
+                <span class="horas-value">{{ r.horas }}h</span>
+                <button class="delete-btn small" @click="removeRegistroHoras(r.id)">×</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </Teleport>
@@ -203,10 +246,52 @@
 import { ref, computed, onMounted } from 'vue'
 import { useTareas, createTarea, updateTarea, deleteTarea, COLUMNAS, PRIORIDAD_COLOR } from '../services/tareas'
 import type { Tarea, TareaEstado, TareaPrioridad } from '../services/tareas'
+import { getRegistrosByTarea, createRegistroHoras, deleteRegistroHoras } from '../services/registros_horas'
+import type { RegistroHoras } from '../services/registros_horas'
 import { useToast } from '../composables/useToast'
 import { supabase } from '../supabase'
 
 const { tareas } = useTareas()
+const { success, error } = useToast()
+
+// ── Current user ──────────────────────────────────────────────────────────────
+const currentUserId = ref<string | null>(null)
+
+// ── Filter ────────────────────────────────────────────────────────────────────
+const misTareasFilter = ref(false)
+
+// ── Team members ──────────────────────────────────────────────────────────────
+interface UsuarioAdmin { id: string; nombre: string }
+const equipo = ref<UsuarioAdmin[]>([])
+const usuarioMap = ref(new Map<string, string>())
+
+// ── Projects ──────────────────────────────────────────────────────────────────
+interface Proyecto { id: string; nombre: string }
+const proyectos = ref<Proyecto[]>([])
+
+// ── Horas reales per tarea ────────────────────────────────────────────────────
+const horasRealesMap = ref(new Map<string, number>())
+
+onMounted(async () => {
+  const [userRes, equipoRes, proyectosRes, horasRes] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.from('usuarios').select('id, nombre').eq('rol', 'ADMIN').order('nombre'),
+    supabase.from('proyectos').select('id, nombre').neq('estado', 'Completado'),
+    supabase.from('registros_horas').select('tarea_id, horas').not('tarea_id', 'is', null),
+  ])
+
+  currentUserId.value = userRes.data.user?.id ?? null
+  equipo.value = (equipoRes.data ?? []) as UsuarioAdmin[]
+  usuarioMap.value = new Map(equipo.value.map(u => [u.id, u.nombre]))
+  proyectos.value = (proyectosRes.data ?? []) as Proyecto[]
+
+  const map = new Map<string, number>()
+  for (const r of (horasRes.data ?? []) as any[]) {
+    if (!r.tarea_id) continue
+    map.set(r.tarea_id, (map.get(r.tarea_id) ?? 0) + Number(r.horas ?? 0))
+  }
+  horasRealesMap.value = map
+})
 
 async function refresh() {
   const { data } = await supabase
@@ -214,29 +299,47 @@ async function refresh() {
     .select('*, proyectos(nombre), leads(empresa), usuarios!tareas_asignado_a_fkey(nombre)')
     .order('created_at', { ascending: false })
   if (data) tareas.value = data as any
+
+  const { data: horasData } = await supabase
+    .from('registros_horas')
+    .select('tarea_id, horas')
+    .not('tarea_id', 'is', null)
+  const map = new Map<string, number>()
+  for (const r of (horasData ?? []) as any[]) {
+    if (!r.tarea_id) continue
+    map.set(r.tarea_id, (map.get(r.tarea_id) ?? 0) + Number(r.horas ?? 0))
+  }
+  horasRealesMap.value = map
 }
-const { success, error } = useToast()
 
-// ── Projects for select ──────────────────────────────────────────────────────
-interface Proyecto { id: string; nombre: string }
-const proyectos = ref<Proyecto[]>([])
-
-onMounted(async () => {
-  const { data } = await supabase
-    .from('proyectos')
-    .select('id, nombre')
-    .neq('estado', 'Completado')
-  if (data) proyectos.value = data
-})
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function getColumnTareas(key: string): Tarea[] {
-  return tareas.value.filter(t => t.estado === key)
+  let list = tareas.value.filter(t => t.estado === key)
+  if (misTareasFilter.value && currentUserId.value) {
+    list = list.filter(t => t.asignado_a === currentUserId.value)
+  }
+  return list
 }
 
-const pendingCount = computed(() =>
-  tareas.value.filter(t => t.estado === 'backlog').length
-)
+function getUsuarioNombre(id: string): string {
+  return usuarioMap.value.get(id) ?? 'Usuario'
+}
+
+function getUsuarioInitials(id: string): string {
+  return getUsuarioNombre(id)
+    .split(' ')
+    .map(p => p[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+}
+
+const pendingCount = computed(() => {
+  if (misTareasFilter.value && currentUserId.value) {
+    return tareas.value.filter(t => t.estado === 'backlog' && t.asignado_a === currentUserId.value).length
+  }
+  return tareas.value.filter(t => t.estado === 'backlog').length
+})
 
 function isOverdue(date: string): boolean {
   return new Date(date) < new Date(new Date().toDateString())
@@ -246,38 +349,34 @@ function formatDate(date: string): string {
   return new Date(date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
 }
 
-// ── Drag & Drop ───────────────────────────────────────────────────────────────
-const draggingId  = ref<string | null>(null)
-const dragOverCol = ref<string | null>(null)
-let   draggingTarea: Tarea | null = null
+// ── Drag and Drop ─────────────────────────────────────────────────────────────
+const draggedId = ref<string | null>(null)
+const dragOverColumn = ref<string | null>(null)
 
-function onDragStart(tarea: Tarea) {
-  draggingTarea = tarea
-  draggingId.value = tarea.id
+function onDragStart(tareaId: string) {
+  draggedId.value = tareaId
 }
 
-function onDragEnd() {
-  draggingId.value = null
-  dragOverCol.value = null
-  draggingTarea = null
+function onDragLeave(colKey: string, event: DragEvent) {
+  const target = event.currentTarget as HTMLElement
+  const related = event.relatedTarget as Node | null
+  if (!related || !target.contains(related)) {
+    if (dragOverColumn.value === colKey) dragOverColumn.value = null
+  }
 }
 
-function onDragOver(colKey: string) {
-  dragOverCol.value = colKey
-}
-
-function onDragLeave() {
-  dragOverCol.value = null
-}
-
-async function onDrop(colKey: string) {
-  dragOverCol.value = null
-  if (!draggingTarea || draggingTarea.estado === colKey) return
-  const tarea = draggingTarea
-  draggingTarea = null
-  draggingId.value = null
+async function onDrop(targetEstado: string) {
+  dragOverColumn.value = null
+  if (!draggedId.value) return
+  const tarea = tareas.value.find(t => t.id === draggedId.value)
+  if (!tarea || tarea.estado === targetEstado) {
+    draggedId.value = null
+    return
+  }
+  const id = draggedId.value
+  draggedId.value = null
   try {
-    await updateTarea(tarea.id, { estado: colKey as TareaEstado })
+    await updateTarea(id, { estado: targetEstado as TareaEstado })
     await refresh()
     success('Tarea movida')
   } catch {
@@ -285,7 +384,7 @@ async function onDrop(colKey: string) {
   }
 }
 
-// ── Delete ───────────────────────────────────────────────────────────────────
+// ── Delete ────────────────────────────────────────────────────────────────────
 async function confirmDelete(tarea: Tarea) {
   if (!confirm(`¿Eliminar la tarea "${tarea.titulo}"?`)) return
   try {
@@ -297,7 +396,7 @@ async function confirmDelete(tarea: Tarea) {
   }
 }
 
-// ── Modal state ──────────────────────────────────────────────────────────────
+// ── Create / Edit Modal ───────────────────────────────────────────────────────
 const showModal = ref(false)
 const isEditing = ref(false)
 const saving = ref(false)
@@ -309,6 +408,7 @@ interface FormState {
   estado: TareaEstado
   prioridad: TareaPrioridad
   proyecto_id: string | null
+  asignado_a: string | null
   horas_estimadas: number
   fecha_limite: string
 }
@@ -319,6 +419,7 @@ const defaultForm = (): FormState => ({
   estado: 'backlog' as TareaEstado,
   prioridad: 'Media' as TareaPrioridad,
   proyecto_id: null,
+  asignado_a: null,
   horas_estimadas: 0,
   fecha_limite: '',
 })
@@ -341,6 +442,7 @@ function openEditModal(tarea: Tarea) {
     estado: tarea.estado,
     prioridad: tarea.prioridad,
     proyecto_id: tarea.proyecto_id ?? null,
+    asignado_a: tarea.asignado_a ?? null,
     horas_estimadas: tarea.horas_estimadas ?? 0,
     fecha_limite: tarea.fecha_limite ? tarea.fecha_limite.slice(0, 10) : '',
   }
@@ -364,6 +466,7 @@ async function submitForm() {
       estado: form.value.estado,
       prioridad: form.value.prioridad,
       proyecto_id: form.value.proyecto_id || null,
+      asignado_a: form.value.asignado_a || null,
       horas_estimadas: form.value.horas_estimadas || 0,
       fecha_limite: form.value.fecha_limite || null,
     }
@@ -382,10 +485,93 @@ async function submitForm() {
     saving.value = false
   }
 }
+
+// ── Hours Modal ───────────────────────────────────────────────────────────────
+const showHorasModal = ref(false)
+const horasModalTarea = ref<Tarea | null>(null)
+const horasRegistros = ref<RegistroHoras[]>([])
+const savingHoras = ref(false)
+
+const horasForm = ref({ fecha: '', horas: 0, descripcion: '' })
+
+const horasTotalesModal = computed(() =>
+  horasRegistros.value.reduce((s, r) => s + Number(r.horas), 0)
+)
+
+const desviacionModal = computed(() => {
+  const est = Number(horasModalTarea.value?.horas_estimadas ?? 0)
+  const real = horasTotalesModal.value
+  if (!est && !real) return '—'
+  const diff = real - est
+  return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}h`
+})
+
+const desviacionClass = computed(() => {
+  const est = Number(horasModalTarea.value?.horas_estimadas ?? 0)
+  const real = horasTotalesModal.value
+  if (!est && !real) return ''
+  return real > est ? 'over' : 'under'
+})
+
+async function openHorasModal(tarea: Tarea) {
+  horasModalTarea.value = tarea
+  horasForm.value = { fecha: new Date().toISOString().split('T')[0] ?? '', horas: 0, descripcion: '' }
+  horasRegistros.value = await getRegistrosByTarea(tarea.id)
+  showHorasModal.value = true
+}
+
+function closeHorasModal() {
+  showHorasModal.value = false
+  horasModalTarea.value = null
+  horasRegistros.value = []
+}
+
+async function submitRegistroHoras() {
+  if (!horasModalTarea.value || !horasForm.value.horas) return
+  savingHoras.value = true
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    await createRegistroHoras({
+      tarea_id: horasModalTarea.value.id,
+      proyecto_id: horasModalTarea.value.proyecto_id ?? null,
+      usuario_id: user!.id,
+      fecha: horasForm.value.fecha,
+      horas: horasForm.value.horas,
+      descripcion: horasForm.value.descripcion,
+    })
+    horasRegistros.value = await getRegistrosByTarea(horasModalTarea.value.id)
+    horasForm.value = { fecha: new Date().toISOString().split('T')[0] ?? '', horas: 0, descripcion: '' }
+    const tareaId = horasModalTarea.value.id
+    const total = horasRegistros.value.reduce((s, r) => s + Number(r.horas), 0)
+    horasRealesMap.value = new Map(horasRealesMap.value).set(tareaId, total)
+    success('Horas registradas')
+  } catch {
+    error('Error al registrar horas')
+  } finally {
+    savingHoras.value = false
+  }
+}
+
+async function removeRegistroHoras(id: string) {
+  if (!horasModalTarea.value) return
+  try {
+    await deleteRegistroHoras(id)
+    horasRegistros.value = await getRegistrosByTarea(horasModalTarea.value.id)
+    const tareaId = horasModalTarea.value.id
+    const total = horasRegistros.value.reduce((s, r) => s + Number(r.horas), 0)
+    const newMap = new Map(horasRealesMap.value)
+    if (total === 0) newMap.delete(tareaId)
+    else newMap.set(tareaId, total)
+    horasRealesMap.value = newMap
+    success('Registro eliminado')
+  } catch {
+    error('Error al eliminar registro')
+  }
+}
 </script>
 
 <style scoped>
-/* ── Layout ─────────────────────────────────────────────────────────────────── */
+/* ── Layout ────────────────────────────────────────────────────────────────── */
 .tareas-view {
   padding: 24px;
   min-height: 100vh;
@@ -396,7 +582,7 @@ async function submitForm() {
   gap: 24px;
 }
 
-/* ── Page Header ────────────────────────────────────────────────────────────── */
+/* ── Page Header ───────────────────────────────────────────────────────────── */
 .page-header {
   display: flex;
   align-items: center;
@@ -411,11 +597,16 @@ async function submitForm() {
   gap: 12px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .page-title {
   font-size: 1.5rem;
   font-weight: 700;
   margin: 0;
-  color: var(--color-text-light);
 }
 
 .pending-badge {
@@ -427,7 +618,31 @@ async function submitForm() {
   border-radius: 20px;
 }
 
-/* ── Kanban Board ───────────────────────────────────────────────────────────── */
+.btn-toggle {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.btn-toggle:hover {
+  color: var(--color-text-light);
+  border-color: var(--color-primary);
+}
+
+.btn-toggle.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #000;
+  font-weight: 600;
+}
+
+/* ── Kanban Board ──────────────────────────────────────────────────────────── */
 .kanban-board {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -437,7 +652,6 @@ async function submitForm() {
   padding-bottom: 8px;
 }
 
-/* ── Column ─────────────────────────────────────────────────────────────────── */
 .kanban-column {
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
@@ -473,8 +687,6 @@ async function submitForm() {
 .column-label {
   font-weight: 600;
   font-size: 0.875rem;
-  padding: 2px 8px;
-  border-radius: 4px;
 }
 
 .count-badge {
@@ -488,14 +700,21 @@ async function submitForm() {
   text-align: center;
 }
 
-/* ── Cards List ─────────────────────────────────────────────────────────────── */
+/* ── Cards List / Drop Zone ────────────────────────────────────────────────── */
 .cards-list {
   padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   flex: 1;
-  min-height: 60px;
+  min-height: 80px;
+  transition: background 0.15s;
+}
+
+.cards-list.drag-over {
+  background: var(--color-primary)11;
+  outline: 2px dashed var(--color-primary)66;
+  outline-offset: -4px;
 }
 
 .empty-column {
@@ -503,10 +722,10 @@ async function submitForm() {
   color: var(--color-text-muted);
   font-size: 0.8rem;
   padding: 20px 0;
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
-/* ── Task Card ──────────────────────────────────────────────────────────────── */
+/* ── Task Card ─────────────────────────────────────────────────────────────── */
 .task-card {
   background: var(--color-bg-dark);
   border: 1px solid var(--color-border);
@@ -547,23 +766,47 @@ async function submitForm() {
   letter-spacing: 0.03em;
 }
 
+.card-btns {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.hours-btn {
+  background: none;
+  border: none;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  transition: color 0.15s, background 0.15s;
+  line-height: 1;
+}
+
+.hours-btn:hover {
+  color: #60a5fa;
+  background: #3b82f622;
+}
+
 .delete-btn {
   background: none;
   border: none;
   color: var(--color-text-muted);
   font-size: 1.1rem;
   cursor: pointer;
-  padding: 0 2px;
+  padding: 0 3px;
   line-height: 1;
   border-radius: 4px;
   transition: color 0.15s, background 0.15s;
-  flex-shrink: 0;
 }
 
 .delete-btn:hover {
   color: #f87171;
   background: #f8717122;
 }
+
+.delete-btn.small { font-size: 0.95rem; }
 
 .card-title {
   font-size: 0.875rem;
@@ -596,10 +839,16 @@ async function submitForm() {
   text-overflow: ellipsis;
 }
 
-.hours-tag {
+.hours-tag.estimated {
   background: #3b82f622;
-  color: #60a5fa;
+  color: #93c5fd;
   border: 1px solid #3b82f644;
+}
+
+.hours-tag.real {
+  background: #10b98122;
+  color: #34d399;
+  border: 1px solid #10b98144;
 }
 
 .date-tag {
@@ -614,14 +863,28 @@ async function submitForm() {
   border-color: #ef444455;
 }
 
-.cards-list.drag-over {
-  background: rgba(227, 255, 4, 0.04);
-  outline: 2px dashed rgba(227, 255, 4, 0.4);
-  outline-offset: -4px;
-  border-radius: 6px;
+.card-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-/* ── Add Card Button ────────────────────────────────────────────────────────── */
+.assignee-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #000;
+  font-size: 0.65rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: default;
+}
+
+/* ── Add Card Button ───────────────────────────────────────────────────────── */
 .add-card-btn {
   width: 100%;
   background: none;
@@ -640,7 +903,7 @@ async function submitForm() {
   color: var(--color-primary);
 }
 
-/* ── Buttons ────────────────────────────────────────────────────────────────── */
+/* ── Buttons ───────────────────────────────────────────────────────────────── */
 .btn-primary {
   background: var(--color-primary);
   color: #000;
@@ -653,14 +916,9 @@ async function submitForm() {
   transition: opacity 0.15s;
 }
 
-.btn-primary:hover:not(:disabled) {
-  opacity: 0.88;
-}
-
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.btn-primary:hover:not(:disabled) { opacity: 0.88; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary.btn-sm { padding: 7px 14px; font-size: 0.82rem; }
 
 .btn-secondary {
   background: var(--color-bg-lighter);
@@ -674,11 +932,9 @@ async function submitForm() {
   transition: background 0.15s;
 }
 
-.btn-secondary:hover {
-  background: var(--color-bg-card);
-}
+.btn-secondary:hover { background: var(--color-bg-card); }
 
-/* ── Modal ──────────────────────────────────────────────────────────────────── */
+/* ── Modal ─────────────────────────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -702,9 +958,11 @@ async function submitForm() {
   flex-direction: column;
 }
 
+.modal-horas { max-width: 560px; }
+
 .modal-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   padding: 20px 24px 16px;
   border-bottom: 1px solid var(--color-border);
@@ -714,7 +972,12 @@ async function submitForm() {
   font-size: 1.1rem;
   font-weight: 700;
   margin: 0;
-  color: var(--color-text-light);
+}
+
+.modal-subtitle {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  margin: 4px 0 0;
 }
 
 .modal-close {
@@ -727,13 +990,12 @@ async function submitForm() {
   line-height: 1;
   border-radius: 4px;
   transition: color 0.15s;
+  flex-shrink: 0;
 }
 
-.modal-close:hover {
-  color: var(--color-text-light);
-}
+.modal-close:hover { color: var(--color-text-light); }
 
-/* ── Modal Form ─────────────────────────────────────────────────────────────── */
+/* ── Modal Form ────────────────────────────────────────────────────────────── */
 .modal-form {
   padding: 20px 24px 24px;
   display: flex;
@@ -762,9 +1024,7 @@ async function submitForm() {
   letter-spacing: 0.04em;
 }
 
-.required {
-  color: #f87171;
-}
+.required { color: #f87171; }
 
 .form-input {
   background: var(--color-bg-lighter);
@@ -779,20 +1039,9 @@ async function submitForm() {
   font-family: inherit;
 }
 
-.form-input:focus {
-  outline: none;
-  border-color: var(--color-primary);
-}
-
-.form-input::placeholder {
-  color: var(--color-text-muted);
-  opacity: 0.6;
-}
-
-.form-textarea {
-  resize: vertical;
-  min-height: 80px;
-}
+.form-input:focus { outline: none; border-color: var(--color-primary); }
+.form-input::placeholder { color: var(--color-text-muted); opacity: 0.6; }
+.form-textarea { resize: vertical; min-height: 80px; }
 
 .form-select {
   appearance: none;
@@ -803,10 +1052,7 @@ async function submitForm() {
   cursor: pointer;
 }
 
-.form-select option {
-  background: var(--color-bg-card);
-  color: var(--color-text-light);
-}
+.form-select option { background: var(--color-bg-card); color: var(--color-text-light); }
 
 .modal-actions {
   display: flex;
@@ -817,24 +1063,121 @@ async function submitForm() {
   border-top: 1px solid var(--color-border);
 }
 
-/* ── Responsive ─────────────────────────────────────────────────────────────── */
+/* ── Hours Modal Content ───────────────────────────────────────────────────── */
+.horas-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.summary-card {
+  background: var(--color-bg-card);
+  padding: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.summary-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.summary-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text-light);
+}
+
+.summary-value.real  { color: #34d399; }
+.summary-value.over  { color: #f87171; }
+.summary-value.under { color: #34d399; }
+
+.horas-form {
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.horas-list {
+  padding: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.empty-horas {
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  padding: 20px;
+  opacity: 0.6;
+}
+
+.horas-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--color-border)66;
+  transition: background 0.1s;
+}
+
+.horas-row:hover { background: var(--color-bg-lighter)44; }
+
+.horas-row-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.horas-fecha {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.horas-desc {
+  font-size: 0.82rem;
+  color: var(--color-text-light);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.horas-row-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.horas-value {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #34d399;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .tareas-view {
-    padding: 16px;
-  }
+  .tareas-view { padding: 16px; }
 
   .kanban-board {
     grid-template-columns: 1fr;
     overflow-x: unset;
   }
 
-  .kanban-column {
-    min-width: unset;
-  }
-
-  .form-row {
-    grid-template-columns: 1fr;
-  }
+  .kanban-column { min-width: unset; }
+  .form-row { grid-template-columns: 1fr; }
 
   .page-header {
     flex-direction: column;

@@ -8,10 +8,12 @@ import {
 } from '../services/operations';
 import { useClientsList } from '../services/clients';
 import { useTareas, type Tarea } from '../services/tareas';
+import { useResumenHoras } from '../services/registros_horas';
 
 const { proyectos, equipo, teamLoad, kpis, loading } = useOperationsData();
 const { clients } = useClientsList();
 const { tareas } = useTareas();
+const { resumen: resumenHoras, loading: loadingHoras } = useResumenHoras();
 
 // ── Proyectos ────────────────────────────────────────────────────────────────
 const showProyModal = ref(false);
@@ -221,6 +223,38 @@ const horasPendientesMiembro = computed(() => {
           </div>
         </DashboardCard>
       </div>
+
+      <!-- Resumen de horas por proyecto/trabajador -->
+      <DashboardCard title="Horas por Proyecto y Trabajador">
+        <div v-if="loadingHoras" class="empty-state">Cargando horas...</div>
+        <div v-else-if="resumenHoras.length === 0" class="empty-state">Sin registros de horas aún</div>
+        <div v-else class="horas-table-wrap">
+          <table class="horas-table">
+            <thead>
+              <tr>
+                <th>Proyecto</th>
+                <th>Trabajador</th>
+                <th class="text-right">Estimadas</th>
+                <th class="text-right">Reales</th>
+                <th class="text-right">Desviación</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in resumenHoras" :key="row.proyecto_id + row.usuario_id">
+                <td class="cell-proyecto">{{ row.proyecto_nombre }}</td>
+                <td class="cell-usuario">{{ row.usuario_nombre }}</td>
+                <td class="text-right cell-num">{{ row.horas_estimadas }}h</td>
+                <td class="text-right cell-num real">{{ row.horas_reales }}h</td>
+                <td class="text-right cell-num" :class="row.horas_reales > row.horas_estimadas ? 'over' : 'under'">
+                  {{ row.horas_estimadas || row.horas_reales
+                    ? (row.horas_reales - row.horas_estimadas >= 0 ? '+' : '') + (row.horas_reales - row.horas_estimadas).toFixed(1) + 'h'
+                    : '—' }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </DashboardCard>
     </template>
 
     <!-- Modal: Proyecto -->
@@ -355,4 +389,18 @@ const horasPendientesMiembro = computed(() => {
   .project-right { width: 100%; align-items: flex-start; margin-top: 0.5rem; }
   .estado-select { width: 100%; }
 }
+
+.horas-table-wrap { overflow-x: auto; }
+.horas-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+.horas-table th { text-align: left; font-size: 0.72rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 8px 12px; border-bottom: 1px solid var(--color-border); }
+.horas-table td { padding: 10px 12px; border-bottom: 1px solid var(--color-border)55; }
+.horas-table tr:last-child td { border-bottom: none; }
+.horas-table tr:hover td { background: rgba(255,255,255,0.02); }
+.text-right { text-align: right; }
+.cell-proyecto { font-weight: 600; color: var(--color-text-light); }
+.cell-usuario { color: var(--color-text-muted); }
+.cell-num { font-weight: 600; font-variant-numeric: tabular-nums; }
+.cell-num.real { color: #34d399; }
+.cell-num.over { color: #f87171; }
+.cell-num.under { color: #34d399; }
 </style>
