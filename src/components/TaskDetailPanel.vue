@@ -54,12 +54,21 @@
                 <option v-for="p in proyectos" :key="p.id" :value="p.id">{{ p.nombre }}</option>
               </select>
             </div>
-            <div class="meta-item">
+            <div class="meta-item meta-item-full">
               <span class="meta-label">Asignado a</span>
-              <select v-model="draft.asignado_a" class="meta-select">
-                <option :value="null">—</option>
-                <option v-for="u in equipo" :key="u.id" :value="u.id">{{ u.nombre }}</option>
-              </select>
+              <div class="assignees-picker">
+                <button
+                  v-for="u in equipo"
+                  :key="u.id"
+                  type="button"
+                  class="assignee-pill"
+                  :class="{ active: draft.asignados_ids.includes(u.id) }"
+                  @click="toggleDraftAssignee(u.id)"
+                >
+                  <span class="pill-avatar">{{ initials(u.nombre) }}</span>
+                  {{ u.nombre }}
+                </button>
+              </div>
             </div>
             <div class="meta-item">
               <span class="meta-label">Horas est.</span>
@@ -246,7 +255,7 @@ const draft = ref({
   estado:             props.tarea.estado as TareaEstado,
   prioridad:          props.tarea.prioridad as TareaPrioridad,
   proyecto_id:        props.tarea.proyecto_id ?? null as string | null,
-  asignado_a:         props.tarea.asignado_a ?? null as string | null,
+  asignados_ids:      [...(props.tarea.asignados_ids ?? [])],
   horas_estimadas:    props.tarea.horas_estimadas ?? 0,
   fecha_inicio_tarea: props.tarea.fecha_inicio_tarea ? props.tarea.fecha_inicio_tarea.slice(0, 10) : '',
   fecha_limite:       props.tarea.fecha_limite ? props.tarea.fecha_limite.slice(0, 10) : '',
@@ -259,12 +268,18 @@ watch(() => props.tarea, (t) => {
     estado:             t.estado,
     prioridad:          t.prioridad,
     proyecto_id:        t.proyecto_id ?? null,
-    asignado_a:         t.asignado_a ?? null,
+    asignados_ids:      [...(t.asignados_ids ?? [])],
     horas_estimadas:    t.horas_estimadas ?? 0,
     fecha_inicio_tarea: t.fecha_inicio_tarea ? t.fecha_inicio_tarea.slice(0, 10) : '',
     fecha_limite:       t.fecha_limite ? t.fecha_limite.slice(0, 10) : '',
   }
 })
+
+function toggleDraftAssignee(uid: string) {
+  const idx = draft.value.asignados_ids.indexOf(uid)
+  if (idx === -1) draft.value.asignados_ids.push(uid)
+  else draft.value.asignados_ids.splice(idx, 1)
+}
 
 const estadoColor = computed(() => COLUMNAS.find(c => c.key === draft.value.estado)?.color ?? '#94a3b8')
 
@@ -282,7 +297,7 @@ async function saveDetails() {
       estado:             draft.value.estado,
       prioridad:          draft.value.prioridad,
       proyecto_id:        draft.value.proyecto_id || null,
-      asignado_a:         draft.value.asignado_a || null,
+      asignados_ids:      draft.value.asignados_ids,
       horas_estimadas:    draft.value.horas_estimadas || 0,
       fecha_inicio_tarea: draft.value.fecha_inicio_tarea || null,
       fecha_limite:       draft.value.fecha_limite || null,
@@ -664,6 +679,58 @@ onMounted(() => Promise.all([loadSubtareas(), loadHoras(), loadComentarios()]))
   color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.meta-item-full {
+  grid-column: 1 / -1;
+}
+
+.assignees-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.assignee-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-dark);
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.assignee-pill:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text-light);
+}
+
+.assignee-pill.active {
+  background: var(--color-primary)22;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.pill-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #000;
+  font-size: 0.58rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .meta-select,

@@ -14,6 +14,7 @@ export type Tarea = {
   proyecto_id: string | null;
   lead_id: string | null;
   asignado_a: string | null;
+  asignados_ids: string[];
   horas_estimadas: number;
   fecha_inicio_tarea: string | null;
   fecha_limite: string | null;

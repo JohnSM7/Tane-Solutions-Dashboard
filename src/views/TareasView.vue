@@ -90,10 +90,16 @@
               </span>
             </div>
 
-            <!-- Assignee -->
-            <div v-if="tarea.asignado_a" class="card-footer">
-              <span class="assignee-badge" :title="getUsuarioNombre(tarea.asignado_a)">
-                {{ getUsuarioInitials(tarea.asignado_a) }}
+            <!-- Assignees -->
+            <div v-if="tarea.asignados_ids?.length" class="card-footer">
+              <span
+                v-for="uid in tarea.asignados_ids.slice(0, 3)"
+                :key="uid"
+                class="assignee-badge"
+                :title="getUsuarioNombre(uid)"
+              >{{ getUsuarioInitials(uid) }}</span>
+              <span v-if="tarea.asignados_ids.length > 3" class="assignee-more">
+                +{{ tarea.asignados_ids.length - 3 }}
               </span>
             </div>
           </div>
@@ -149,10 +155,19 @@
             </div>
             <div class="form-group">
               <label class="form-label">Asignado a</label>
-              <select v-model="form.asignado_a" class="form-input form-select">
-                <option :value="null">Sin asignar</option>
-                <option v-for="u in equipo" :key="u.id" :value="u.id">{{ u.nombre }}</option>
-              </select>
+              <div class="assignees-picker">
+                <button
+                  v-for="u in equipo"
+                  :key="u.id"
+                  type="button"
+                  class="assignee-pill"
+                  :class="{ active: form.asignados_ids.includes(u.id) }"
+                  @click="toggleFormAssignee(u.id)"
+                >
+                  <span class="pill-avatar">{{ getInitials(u.nombre) }}</span>
+                  {{ u.nombre }}
+                </button>
+              </div>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -305,7 +320,10 @@ async function refresh() {
 function getColumnTareas(key: string): Tarea[] {
   let list = tareas.value.filter(t => t.estado === key)
   if (misTareasFilter.value && currentUserId.value) {
-    list = list.filter(t => t.asignado_a === currentUserId.value)
+    list = list.filter(t =>
+      t.asignados_ids?.includes(currentUserId.value!) ||
+      t.asignado_a === currentUserId.value
+    )
   }
   return list
 }
@@ -325,7 +343,10 @@ function getUsuarioInitials(id: string): string {
 
 const pendingCount = computed(() => {
   if (misTareasFilter.value && currentUserId.value) {
-    return tareas.value.filter(t => t.estado === 'backlog' && t.asignado_a === currentUserId.value).length
+    return tareas.value.filter(t =>
+      t.estado === 'backlog' &&
+      (t.asignados_ids?.includes(currentUserId.value!) || t.asignado_a === currentUserId.value)
+    ).length
   }
   return tareas.value.filter(t => t.estado === 'backlog').length
 })
@@ -452,7 +473,7 @@ interface FormState {
   estado: TareaEstado
   prioridad: TareaPrioridad
   proyecto_id: string | null
-  asignado_a: string | null
+  asignados_ids: string[]
   horas_estimadas: number
   fecha_limite: string
   es_recurrente: boolean
@@ -465,12 +486,22 @@ const defaultForm = (): FormState => ({
   estado: 'backlog' as TareaEstado,
   prioridad: 'Media' as TareaPrioridad,
   proyecto_id: null,
-  asignado_a: null,
+  asignados_ids: [],
   horas_estimadas: 0,
   fecha_limite: '',
   es_recurrente: false,
   frecuencia_recurrencia: 'semanal',
 })
+
+function toggleFormAssignee(uid: string) {
+  const idx = form.value.asignados_ids.indexOf(uid)
+  if (idx === -1) form.value.asignados_ids.push(uid)
+  else form.value.asignados_ids.splice(idx, 1)
+}
+
+function getInitials(nombre: string): string {
+  return nombre.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase()
+}
 
 const form = ref<FormState>(defaultForm())
 
@@ -494,7 +525,7 @@ async function submitForm() {
       estado:          form.value.estado,
       prioridad:       form.value.prioridad,
       proyecto_id:     form.value.proyecto_id || null,
-      asignado_a:      form.value.asignado_a || null,
+      asignados_ids:   form.value.asignados_ids,
       horas_estimadas: form.value.horas_estimadas || 0,
       fecha_limite:    form.value.fecha_limite || null,
     }
@@ -812,6 +843,67 @@ async function submitForm() {
   justify-content: center;
   flex-shrink: 0;
   cursor: default;
+  margin-right: -6px;
+  border: 2px solid var(--color-bg-card);
+}
+
+.assignee-more {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  margin-left: 10px;
+}
+
+/* ── Assignees picker ──────────────────────────────────────────────────────── */
+.assignees-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.assignee-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-lighter);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.assignee-pill:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text-light);
+}
+
+.assignee-pill.active {
+  background: var(--color-primary)22;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.pill-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #000;
+  font-size: 0.6rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.assignee-pill.active .pill-avatar {
+  background: var(--color-primary);
 }
 
 /* ── Add Card Button ───────────────────────────────────────────────────────── */
