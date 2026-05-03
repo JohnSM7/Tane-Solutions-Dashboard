@@ -47,6 +47,10 @@ const FRECUENCIA_COUNT: Record<FrecuenciaRecurrencia, number> = {
   diaria: 60, semanal: 52, quincenal: 26, mensual: 24,
 };
 
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function advanceDate(dateStr: string, frecuencia: FrecuenciaRecurrencia, n: number): string {
   const d = new Date(dateStr + 'T00:00:00');
   for (let i = 0; i < n; i++) {
@@ -55,7 +59,7 @@ function advanceDate(dateStr: string, frecuencia: FrecuenciaRecurrencia, n: numb
     if (frecuencia === 'quincenal') d.setDate(d.getDate() + 14);
     if (frecuencia === 'mensual')   d.setMonth(d.getMonth() + 1);
   }
-  return d.toISOString().split('T')[0] ?? dateStr;
+  return localDateStr(d);
 }
 
 function stripTareaJoins(t: Partial<Tarea>): Partial<Tarea> {
@@ -118,7 +122,7 @@ export async function createTareaRecurrente(
       ? (i === 0 ? baseInicio : (() => {
           const d = new Date(limite + 'T00:00:00');
           d.setDate(d.getDate() - offsetDias);
-          return d.toISOString().split('T')[0] ?? baseInicio;
+          return localDateStr(d);
         })())
       : null;
 
