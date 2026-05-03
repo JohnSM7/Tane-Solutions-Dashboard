@@ -40,12 +40,13 @@ interface CalEvent {
   id: string;
   type: 'tarea' | 'proyecto';
   title: string;
-  color: string;
+  color: string;        // project color (main bar color)
+  priorityColor: string; // priority dot color
   estado: string;
   prioridad?: string;
   date: string;
-  role: 'single' | 'start' | 'mid' | 'end'; // position in range
-  tareaRef?: TareaRow; // only for tareas
+  role: 'single' | 'start' | 'mid' | 'end';
+  tareaRef?: TareaRow;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,18 @@ interface CalEvent {
 const PRIORIDAD_COLOR: Record<string, string> = {
   Alta: '#ff4444', Media: '#ffa500', Baja: '#94a3b8',
 };
+
+const PROJECT_COLORS = [
+  '#60a5fa', '#f472b6', '#34d399', '#fb923c',
+  '#a78bfa', '#22d3ee', '#fbbf24', '#f87171',
+  '#4ade80', '#818cf8', '#e879f9', '#2dd4bf',
+];
+
+function hashProjectColor(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) & 0x7fffffff;
+  return PROJECT_COLORS[h % PROJECT_COLORS.length]!;
+}
 
 const DIAS_SEMANA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -147,32 +160,34 @@ const events = computed<CalEvent[]>(() => {
   const result: CalEvent[] = [];
 
   for (const t of tareas.value) {
-    const color = PRIORIDAD_COLOR[t.prioridad] ?? '#94a3b8';
-    const inicio = t.fecha_inicio_tarea?.slice(0, 10) ?? null;
-    const fin    = t.fecha_limite?.slice(0, 10) ?? null;
+    const color         = t.proyecto_id ? hashProjectColor(t.proyecto_id) : '#94a3b8';
+    const priorityColor = PRIORIDAD_COLOR[t.prioridad] ?? '#94a3b8';
+    const inicio        = t.fecha_inicio_tarea?.slice(0, 10) ?? null;
+    const fin           = t.fecha_limite?.slice(0, 10) ?? null;
 
     if (inicio && fin && inicio !== fin) {
-      // Range: emit one event per day in range
       const days = daysBetween(inicio, fin);
       for (let i = 0; i <= days; i++) {
         const d = addDays(inicio, i);
         result.push({
-          id: t.id + '_' + d, type: 'tarea', title: t.titulo, color, estado: t.estado,
+          id: t.id + '_' + d, type: 'tarea', title: t.titulo,
+          color, priorityColor, estado: t.estado,
           prioridad: t.prioridad, date: d,
           role: i === 0 ? 'start' : i === days ? 'end' : 'mid',
           tareaRef: t,
         });
       }
     } else if (fin) {
-      result.push({ id: t.id, type: 'tarea', title: t.titulo, color, estado: t.estado, prioridad: t.prioridad, date: fin, role: 'single', tareaRef: t });
+      result.push({ id: t.id, type: 'tarea', title: t.titulo, color, priorityColor, estado: t.estado, prioridad: t.prioridad, date: fin, role: 'single', tareaRef: t });
     } else if (inicio) {
-      result.push({ id: t.id, type: 'tarea', title: t.titulo, color, estado: t.estado, prioridad: t.prioridad, date: inicio, role: 'single', tareaRef: t });
+      result.push({ id: t.id, type: 'tarea', title: t.titulo, color, priorityColor, estado: t.estado, prioridad: t.prioridad, date: inicio, role: 'single', tareaRef: t });
     }
   }
 
   for (const p of proyectos.value) {
     if (!p.fecha_entrega_estimada) continue;
-    result.push({ id: p.id, type: 'proyecto', title: p.nombre, color: ESTADO_COLORS[p.estado] ?? '#e3ff04', estado: p.estado, date: p.fecha_entrega_estimada.slice(0, 10), role: 'single' });
+    const color = ESTADO_COLORS[p.estado] ?? '#e3ff04';
+    result.push({ id: p.id, type: 'proyecto', title: p.nombre, color, priorityColor: color, estado: p.estado, date: p.fecha_entrega_estimada.slice(0, 10), role: 'single' });
   }
 
   return result;
@@ -432,17 +447,20 @@ async function deleteThisAndFuture() {
             <div class="pills-wrap">
               <template v-for="(ev, idx) in eventsForDay(cell.key)" :key="ev.id">
                 <div
-                  v-if="idx < 2"
+                  v-if="idx < 3"
                   class="pill"
                   :class="[`pill-${ev.role}`, ev.type]"
-                  :style="{ '--ev-color': ev.color }"
+                  :style="{ '--ev-color': ev.color, '--pr-color': ev.priorityColor }"
                   :title="ev.title"
                 >
-                  <span v-if="ev.role !== 'mid'" class="pill-text">{{ ev.title }}</span>
+                  <template v-if="ev.role !== 'mid'">
+                    <span class="priority-dot"></span>
+                    <span class="pill-text">{{ ev.title }}</span>
+                  </template>
                 </div>
               </template>
-              <div v-if="eventsForDay(cell.key).length > 2" class="pill-more">
-                +{{ eventsForDay(cell.key).length - 2 }}
+              <div v-if="eventsForDay(cell.key).length > 3" class="pill-more">
+                +{{ eventsForDay(cell.key).length - 3 }}
               </div>
             </div>
           </div>
@@ -732,7 +750,9 @@ async function deleteThisAndFuture() {
   flex-direction: column;
   gap: 3px;
   transition: background 0.12s;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
+  z-index: 0;
 }
 
 .day-cell:nth-child(7n) { border-right: none; }
@@ -763,35 +783,85 @@ async function deleteThisAndFuture() {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  overflow: hidden;
+  overflow: visible;
   flex: 1;
 }
 
 .pill {
-  font-size: 0.68rem;
-  padding: 2px 5px;
-  border-radius: 3px;
+  height: 20px;
+  min-height: 20px;
+  font-size: 0.67rem;
+  padding: 0 6px;
+  border-radius: 4px;
+  line-height: 1;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: color-mix(in srgb, var(--ev-color) 22%, #111);
+  color: var(--ev-color);
+  position: relative;
+  z-index: 2;
+  overflow: hidden;
+}
+
+/* Priority dot — small colored square */
+.priority-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--pr-color);
+  flex-shrink: 0;
+}
+
+.pill-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: 1.4;
-  background: color-mix(in srgb, var(--ev-color) 18%, transparent);
-  color: var(--ev-color);
+  font-weight: 500;
 }
 
-/* Range role styles */
-.pill-single { border-left: 3px solid var(--ev-color); }
-.pill-start  { border-left: 3px solid var(--ev-color); border-radius: 3px 0 0 3px; }
-.pill-mid    { border-radius: 0; padding: 2px 3px; opacity: 0.7; height: 6px; min-height: 6px; font-size: 0; }
-.pill-end    { border-right: 3px solid var(--ev-color); border-radius: 0 3px 3px 0; }
+/* Single: full pill with left accent */
+.pill-single {
+  border-left: 3px solid var(--ev-color);
+}
 
-/* Projects slightly different shade */
-.pill.proyecto { border-style: dashed; }
+/* Range start: round left, square right, extend past right border into next cell */
+.pill-start {
+  border-left: 3px solid var(--ev-color);
+  border-radius: 4px 0 0 4px;
+  margin-right: -6px;    /* 5px cell padding + 1px border */
+  padding-right: 0;
+  overflow: visible;
+}
+
+/* Range middle: no radius, extend past both borders */
+.pill-mid {
+  border-radius: 0;
+  margin: 0 -6px;
+  padding: 0;
+  font-size: 0;          /* hide text in middle segments */
+  opacity: 0.85;
+  overflow: visible;
+}
+
+/* Range end: square left, round right, extend past left border */
+.pill-end {
+  border-radius: 0 4px 4px 0;
+  margin-left: -6px;
+  padding-left: 0;
+  overflow: hidden;
+}
+
+/* Projects: dashed left border */
+.pill.proyecto { border-left: 3px dashed var(--ev-color); }
+.pill-mid.proyecto { border: none; }
 
 .pill-more {
-  font-size: 0.65rem;
+  font-size: 0.63rem;
   color: var(--color-text-muted);
   padding: 0 2px;
+  margin-top: 1px;
 }
 
 /* ── Day panel ─────────────────────────────────────────────────────────────── */
@@ -1168,10 +1238,11 @@ async function deleteThisAndFuture() {
 
   .day-cell { min-height: 64px; padding: 4px 3px; }
 
-  .pill { font-size: 0; width: 8px; height: 8px; min-height: 8px; border-radius: 50% !important; border: none !important; padding: 0; flex-shrink: 0; }
-  .pill-mid { height: 5px; width: 100%; border-radius: 0 !important; }
-  .pills-wrap { flex-direction: row; flex-wrap: wrap; gap: 3px; align-items: center; }
+  .pill { font-size: 0; width: 10px; height: 10px; min-height: 10px; border-radius: 50% !important; border: none !important; padding: 0; flex-shrink: 0; margin: 0 !important; }
+  .pill-mid { height: 10px; width: 10px; border-radius: 50% !important; margin: 0 !important; }
+  .pills-wrap { flex-direction: row; flex-wrap: wrap; gap: 3px; align-items: center; overflow: hidden; }
   .pill-more { font-size: 0.6rem; width: auto; height: auto; }
+  .priority-dot { display: none; }
 
   .dow-header { font-size: 0.65rem; padding: 6px 2px; }
   .day-num { font-size: 0.72rem; min-width: 20px; height: 20px; }
