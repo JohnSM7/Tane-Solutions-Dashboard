@@ -202,7 +202,93 @@ const eventMap = computed<Record<string, CalEvent[]>>(() => {
   return map;
 });
 
-function eventsForDay(key: string): CalEvent[] { return eventMap.value[key] ?? []; }
+// (eventMap still used by selectedDayEvents below)
+
+// ---------------------------------------------------------------------------
+// Week-row bar layout (Google Calendar style)
+// ---------------------------------------------------------------------------
+
+const MAX_LANES = 3;
+
+interface EventBar {
+  id: string;
+  event: CalEvent;
+  startCol: number;
+  span: number;
+  lane: number;
+  continuesLeft: boolean;
+  continuesRight: boolean;
+}
+
+const gridWeeks = computed<DayCell[][]>(() => {
+  const d = gridDays.value;
+  const w: DayCell[][] = [];
+  for (let i = 0; i < d.length; i += 7) w.push(d.slice(i, i + 7));
+  return w;
+});
+
+function computeBarsForWeek(week: DayCell[]): { bars: EventBar[]; overflowByCol: number[]; maxLane: number } {
+  const keys   = week.map(d => d.key);
+  const wStart = keys[0]!;
+  const wEnd   = keys[6]!;
+
+  // Deduplicate events by base id
+  const seen = new Set<string>();
+  const uniq: CalEvent[] = [];
+  for (const k of keys) {
+    for (const ev of eventMap.value[k] ?? []) {
+      const bid = ev.tareaRef?.id ?? ev.id;
+      if (!seen.has(bid)) { seen.add(bid); uniq.push(ev); }
+    }
+  }
+
+  // Build drafts
+  type Draft = { bid: string; ev: CalEvent; sc: number; span: number; cl: boolean; cr: boolean };
+  const drafts: Draft[] = [];
+  for (const ev of uniq) {
+    let s: string, e: string;
+    if (ev.tareaRef) {
+      s = ev.tareaRef.fecha_inicio_tarea?.slice(0, 10) ?? ev.tareaRef.fecha_limite?.slice(0, 10) ?? ev.date;
+      e = ev.tareaRef.fecha_limite?.slice(0, 10) ?? s;
+    } else { s = ev.date; e = ev.date; }
+
+    const cl = s < wStart, cr = e > wEnd;
+    const es = cl ? wStart : s;
+    const ee = cr ? wEnd   : e;
+    const sc = keys.indexOf(es), ec = keys.indexOf(ee);
+    if (sc < 0 && ec < 0) continue;
+    const c0 = sc >= 0 ? sc : 0, c1 = ec >= 0 ? ec : 6;
+    drafts.push({ bid: ev.tareaRef?.id ?? ev.id, ev, sc: c0, span: Math.max(1, c1 - c0 + 1), cl, cr });
+  }
+
+  // Sort: longest first, then earliest start
+  drafts.sort((a, b) => b.span - a.span || a.sc - b.sc);
+
+  // Interval lane assignment
+  const laneEnd: number[] = [];
+  const allBars: EventBar[] = drafts.map(d => {
+    let lane = 0;
+    while (laneEnd[lane] !== undefined && laneEnd[lane]! >= d.sc) lane++;
+    laneEnd[lane] = d.sc + d.span - 1;
+    return { id: d.bid + '_' + wStart, event: d.ev, startCol: d.sc, span: d.span, lane, continuesLeft: d.cl, continuesRight: d.cr };
+  });
+
+  const visible = allBars.filter(b => b.lane < MAX_LANES);
+  const overflowByCol = keys.map((_, col) => {
+    const total = allBars.filter(b => b.startCol <= col && b.startCol + b.span - 1 >= col).length;
+    const shown = visible.filter(b => b.startCol <= col && b.startCol + b.span - 1 >= col).length;
+    return total - shown;
+  });
+  const maxLane = visible.length > 0 ? Math.max(...visible.map(b => b.lane)) : -1;
+  return { bars: visible, overflowByCol, maxLane };
+}
+
+const _weekBarsCache = computed(() => gridWeeks.value.map(w => computeBarsForWeek(w)));
+
+const EMPTY_WEEK_DATA = { bars: [] as EventBar[], overflowByCol: Array(7).fill(0) as number[], maxLane: -1 };
+function weekBarsMap(wi: number): { bars: EventBar[]; overflowByCol: number[]; maxLane: number } {
+  return _weekBarsCache.value[wi] ?? EMPTY_WEEK_DATA;
+}
 
 // ---------------------------------------------------------------------------
 // Fetch
@@ -427,40 +513,59 @@ async function deleteThisAndFuture() {
       <template v-else>
         <!-- Calendar grid -->
         <div class="cal-grid">
-          <div v-for="dia in DIAS_SEMANA" :key="dia" class="dow-header">{{ dia }}</div>
+          <!-- Day-of-week headers -->
+          <div class="dow-row">
+            <div v-for="dia in DIAS_SEMANA" :key="dia" class="dow-header">{{ dia }}</div>
+          </div>
 
-          <div
-            v-for="cell in gridDays"
-            :key="cell.key"
-            class="day-cell"
-            :class="{
-              'outside-month': !cell.isCurrentMonth,
-              'is-today':      cell.isToday,
-              'is-selected':   selectedDay === cell.key,
-            }"
-            @click="selectDay(cell)"
-          >
-            <div class="day-num-wrap">
-              <span class="day-num" :class="{ 'today-circle': cell.isToday }">{{ cell.dayNum }}</span>
+          <!-- Week rows -->
+          <div v-for="(week, wi) in gridWeeks" :key="wi" class="week-row">
+            <!-- Cell backgrounds + day numbers -->
+            <div class="week-cells">
+              <div
+                v-for="(cell, ci) in week"
+                :key="cell.key"
+                class="day-cell"
+                :class="{
+                  'outside-month': !cell.isCurrentMonth,
+                  'is-today':      cell.isToday,
+                  'is-selected':   selectedDay === cell.key,
+                }"
+                @click="selectDay(cell)"
+              >
+                <span class="day-num" :class="{ 'today-circle': cell.isToday }">{{ cell.dayNum }}</span>
+                <span v-if="weekBarsMap(wi).overflowByCol[ci]" class="overflow-badge">
+                  +{{ weekBarsMap(wi).overflowByCol[ci] }}
+                </span>
+              </div>
             </div>
 
-            <div class="pills-wrap">
-              <template v-for="(ev, idx) in eventsForDay(cell.key)" :key="ev.id">
-                <div
-                  v-if="idx < 3"
-                  class="pill"
-                  :class="[`pill-${ev.role}`, ev.type]"
-                  :style="{ '--ev-color': ev.color, '--pr-color': ev.priorityColor }"
-                  :title="ev.title"
-                >
-                  <template v-if="ev.role !== 'mid'">
-                    <span class="priority-dot"></span>
-                    <span class="pill-text">{{ ev.title }}</span>
-                  </template>
-                </div>
-              </template>
-              <div v-if="eventsForDay(cell.key).length > 3" class="pill-more">
-                +{{ eventsForDay(cell.key).length - 3 }}
+            <!-- Absolutely positioned event bars -->
+            <div
+              class="week-events"
+              :style="{ height: (weekBarsMap(wi).maxLane + 1) * 22 + 8 + 'px' }"
+            >
+              <div
+                v-for="bar in weekBarsMap(wi).bars"
+                :key="bar.id"
+                class="event-bar"
+                :class="{
+                  'cl': bar.continuesLeft,
+                  'cr': bar.continuesRight,
+                  'is-proyecto': bar.event.type === 'proyecto',
+                }"
+                :style="{
+                  left:  `calc(${bar.startCol} / 7 * 100% + 3px)`,
+                  width: `calc(${bar.span}      / 7 * 100% - 6px)`,
+                  top:   `${bar.lane * 22 + 2}px`,
+                  '--ev-color': bar.event.color,
+                  '--pr-color': bar.event.priorityColor,
+                }"
+                :title="bar.event.title"
+                @click.stop="bar.event.tareaRef ? openPanel(bar.event.tareaRef) : null"
+              >
+                <span v-if="!bar.continuesLeft" class="ev-dot"></span>
+                <span class="ev-text">{{ bar.event.title }}</span>
               </div>
             </div>
           </div>
@@ -719,17 +824,19 @@ async function deleteThisAndFuture() {
 
 /* ── Grid ──────────────────────────────────────────────────────────────────── */
 .cal-grid {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
   border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
 }
 
-.dow-header {
+.dow-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   background: var(--color-bg-lighter);
   border-bottom: 1px solid var(--color-border);
-  border-right: 1px solid var(--color-border);
+}
+
+.dow-header {
   text-align: center;
   padding: 8px 4px;
   font-size: 0.72rem;
@@ -737,37 +844,42 @@ async function deleteThisAndFuture() {
   color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  border-right: 1px solid var(--color-border);
 }
 .dow-header:last-child { border-right: none; }
 
+/* ── Week rows ─────────────────────────────────────────────────────────────── */
+.week-row {
+  border-bottom: 1px solid var(--color-border);
+}
+.week-row:last-child { border-bottom: none; }
+
+.week-cells {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
 .day-cell {
   border-right: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
-  min-height: 110px;
-  padding: 6px 5px;
+  min-height: 38px;
+  padding: 4px 6px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  align-items: flex-end;
+  gap: 2px;
   transition: background 0.12s;
-  overflow: visible;
-  position: relative;
-  z-index: 0;
 }
-
-.day-cell:nth-child(7n) { border-right: none; }
+.day-cell:last-child { border-right: none; }
 .day-cell:hover { background: var(--color-primary)07; }
 .day-cell.outside-month { opacity: 0.28; }
 .day-cell.is-today { background: var(--color-primary)09; }
 .day-cell.is-selected { box-shadow: inset 0 0 0 2px var(--color-primary); background: var(--color-primary)0d; }
 
-/* ── Day number ────────────────────────────────────────────────────────────── */
-.day-num-wrap { display: flex; justify-content: flex-end; }
-
 .day-num {
   font-size: 0.8rem;
   color: var(--color-text-muted);
-  padding: 3px 5px;
+  padding: 2px 5px;
   border-radius: 50%;
   min-width: 24px;
   height: 24px;
@@ -775,38 +887,49 @@ async function deleteThisAndFuture() {
   align-items: center;
   justify-content: center;
 }
-
 .today-circle { background: var(--color-primary); color: #000; font-weight: 700; }
 
-/* ── Pills ─────────────────────────────────────────────────────────────────── */
-.pills-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow: visible;
-  flex: 1;
+.overflow-badge {
+  font-size: 0.6rem;
+  color: var(--color-text-muted);
+  align-self: flex-start;
 }
 
-.pill {
+/* ── Event bars (absolutely positioned inside .week-events) ────────────────── */
+.week-events {
+  position: relative;
+  min-height: 26px;
+}
+
+.event-bar {
+  position: absolute;
   height: 20px;
-  min-height: 20px;
-  font-size: 0.67rem;
-  padding: 0 6px;
-  border-radius: 4px;
-  line-height: 1;
-  white-space: nowrap;
   display: flex;
   align-items: center;
   gap: 4px;
-  background: color-mix(in srgb, var(--ev-color) 22%, #111);
-  color: var(--ev-color);
-  position: relative;
-  z-index: 2;
+  padding: 0 7px;
+  font-size: 0.68rem;
+  font-weight: 500;
+  white-space: nowrap;
   overflow: hidden;
+  cursor: pointer;
+  border-radius: 4px;
+  border-left: 3px solid var(--ev-color);
+  background: color-mix(in srgb, var(--ev-color) 20%, #111827);
+  color: var(--ev-color);
+  transition: filter 0.1s;
 }
+.event-bar:hover { filter: brightness(1.15); }
 
-/* Priority dot — small colored square */
-.priority-dot {
+/* Continuation adjustments */
+.event-bar.cl { border-left: none; border-radius: 0 4px 4px 0; padding-left: 4px; }
+.event-bar.cr { border-radius: 4px 0 0 4px; padding-right: 4px; }
+.event-bar.cl.cr { border-radius: 0; }
+
+/* Projects: dashed border */
+.event-bar.is-proyecto { border-left-style: dashed; }
+
+.ev-dot {
   width: 6px;
   height: 6px;
   border-radius: 2px;
@@ -814,54 +937,10 @@ async function deleteThisAndFuture() {
   flex-shrink: 0;
 }
 
-.pill-text {
+.ev-text {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-}
-
-/* Single: full pill with left accent */
-.pill-single {
-  border-left: 3px solid var(--ev-color);
-}
-
-/* Range start: round left, square right, extend past right border into next cell */
-.pill-start {
-  border-left: 3px solid var(--ev-color);
-  border-radius: 4px 0 0 4px;
-  margin-right: -6px;    /* 5px cell padding + 1px border */
-  padding-right: 0;
-  overflow: visible;
-}
-
-/* Range middle: no radius, extend past both borders */
-.pill-mid {
-  border-radius: 0;
-  margin: 0 -6px;
-  padding: 0;
-  font-size: 0;          /* hide text in middle segments */
-  opacity: 0.85;
-  overflow: visible;
-}
-
-/* Range end: square left, round right, extend past left border */
-.pill-end {
-  border-radius: 0 4px 4px 0;
-  margin-left: -6px;
-  padding-left: 0;
-  overflow: hidden;
-}
-
-/* Projects: dashed left border */
-.pill.proyecto { border-left: 3px dashed var(--ev-color); }
-.pill-mid.proyecto { border: none; }
-
-.pill-more {
-  font-size: 0.63rem;
-  color: var(--color-text-muted);
-  padding: 0 2px;
-  margin-top: 1px;
+  flex: 1;
 }
 
 /* ── Day panel ─────────────────────────────────────────────────────────────── */
@@ -1238,11 +1317,13 @@ async function deleteThisAndFuture() {
 
   .day-cell { min-height: 64px; padding: 4px 3px; }
 
-  .pill { font-size: 0; width: 10px; height: 10px; min-height: 10px; border-radius: 50% !important; border: none !important; padding: 0; flex-shrink: 0; margin: 0 !important; }
-  .pill-mid { height: 10px; width: 10px; border-radius: 50% !important; margin: 0 !important; }
-  .pills-wrap { flex-direction: row; flex-wrap: wrap; gap: 3px; align-items: center; overflow: hidden; }
-  .pill-more { font-size: 0.6rem; width: auto; height: auto; }
-  .priority-dot { display: none; }
+  .day-cell { min-height: 28px; padding: 3px 4px; }
+  .day-num { font-size: 0.72rem; min-width: 20px; height: 20px; }
+  .event-bar { font-size: 0; } /* hide text on mobile, keep colored bar */
+  .ev-dot { display: none; }
+  .week-events { min-height: 14px; }
+  .event-bar { height: 10px; border-radius: 3px; padding: 0; }
+  .legend { display: none; }
 
   .dow-header { font-size: 0.65rem; padding: 6px 2px; }
   .day-num { font-size: 0.72rem; min-width: 20px; height: 20px; }
