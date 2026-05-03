@@ -14,6 +14,7 @@ export type Tarea = {
   lead_id: string | null;
   asignado_a: string | null;
   horas_estimadas: number;
+  fecha_inicio_tarea: string | null;
   fecha_limite: string | null;
   created_at: string;
   // joins

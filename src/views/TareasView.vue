@@ -106,7 +106,7 @@
 
     <!-- Create Modal -->
     <Teleport to="body">
-      <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
+      <div v-if="showModal" class="modal-overlay">
         <div class="modal">
           <div class="modal-header">
             <h2 class="modal-title">Nueva Tarea</h2>

@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div class="panel-backdrop" @click.self="$emit('close')">
+    <div class="panel-backdrop">
       <div class="detail-panel">
 
         <!-- Header -->
@@ -47,6 +47,10 @@
             <div class="meta-item">
               <span class="meta-label">Horas est.</span>
               <input v-model.number="draft.horas_estimadas" type="number" min="0" step="0.5" class="meta-input" />
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Fecha inicio</span>
+              <input v-model="draft.fecha_inicio_tarea" type="date" class="meta-input" />
             </div>
             <div class="meta-item">
               <span class="meta-label">Fecha límite</span>
@@ -220,26 +224,28 @@ const emit = defineEmits<{
 
 // ── Draft (local copy for editing) ───────────────────────────────────────────
 const draft = ref({
-  titulo:           props.tarea.titulo,
-  descripcion:      props.tarea.descripcion ?? '',
-  estado:           props.tarea.estado as TareaEstado,
-  prioridad:        props.tarea.prioridad as TareaPrioridad,
-  proyecto_id:      props.tarea.proyecto_id ?? null as string | null,
-  asignado_a:       props.tarea.asignado_a ?? null as string | null,
-  horas_estimadas:  props.tarea.horas_estimadas ?? 0,
-  fecha_limite:     props.tarea.fecha_limite ? props.tarea.fecha_limite.slice(0, 10) : '',
+  titulo:             props.tarea.titulo,
+  descripcion:        props.tarea.descripcion ?? '',
+  estado:             props.tarea.estado as TareaEstado,
+  prioridad:          props.tarea.prioridad as TareaPrioridad,
+  proyecto_id:        props.tarea.proyecto_id ?? null as string | null,
+  asignado_a:         props.tarea.asignado_a ?? null as string | null,
+  horas_estimadas:    props.tarea.horas_estimadas ?? 0,
+  fecha_inicio_tarea: props.tarea.fecha_inicio_tarea ? props.tarea.fecha_inicio_tarea.slice(0, 10) : '',
+  fecha_limite:       props.tarea.fecha_limite ? props.tarea.fecha_limite.slice(0, 10) : '',
 })
 
 watch(() => props.tarea, (t) => {
   draft.value = {
-    titulo:          t.titulo,
-    descripcion:     t.descripcion ?? '',
-    estado:          t.estado,
-    prioridad:       t.prioridad,
-    proyecto_id:     t.proyecto_id ?? null,
-    asignado_a:      t.asignado_a ?? null,
-    horas_estimadas: t.horas_estimadas ?? 0,
-    fecha_limite:    t.fecha_limite ? t.fecha_limite.slice(0, 10) : '',
+    titulo:             t.titulo,
+    descripcion:        t.descripcion ?? '',
+    estado:             t.estado,
+    prioridad:          t.prioridad,
+    proyecto_id:        t.proyecto_id ?? null,
+    asignado_a:         t.asignado_a ?? null,
+    horas_estimadas:    t.horas_estimadas ?? 0,
+    fecha_inicio_tarea: t.fecha_inicio_tarea ? t.fecha_inicio_tarea.slice(0, 10) : '',
+    fecha_limite:       t.fecha_limite ? t.fecha_limite.slice(0, 10) : '',
   }
 })
 
@@ -254,14 +260,15 @@ async function saveDetails() {
   saving.value = true
   try {
     const updated = await updateTarea(props.tarea.id, {
-      titulo:          draft.value.titulo.trim(),
-      descripcion:     draft.value.descripcion.trim() || null,
-      estado:          draft.value.estado,
-      prioridad:       draft.value.prioridad,
-      proyecto_id:     draft.value.proyecto_id || null,
-      asignado_a:      draft.value.asignado_a || null,
-      horas_estimadas: draft.value.horas_estimadas || 0,
-      fecha_limite:    draft.value.fecha_limite || null,
+      titulo:             draft.value.titulo.trim(),
+      descripcion:        draft.value.descripcion.trim() || null,
+      estado:             draft.value.estado,
+      prioridad:          draft.value.prioridad,
+      proyecto_id:        draft.value.proyecto_id || null,
+      asignado_a:         draft.value.asignado_a || null,
+      horas_estimadas:    draft.value.horas_estimadas || 0,
+      fecha_inicio_tarea: draft.value.fecha_inicio_tarea || null,
+      fecha_limite:       draft.value.fecha_limite || null,
     })
     emit('updated', updated)
     saveMsg.value = '✓ Guardado'

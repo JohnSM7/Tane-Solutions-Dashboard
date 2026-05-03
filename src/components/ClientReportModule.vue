@@ -395,7 +395,7 @@ const formatCreatedAt = (iso: string): string =>
     </div>
 
     <!-- ── Modal: Crear / Editar informe ─────────────────────────────────── -->
-    <div class="rm-modal-overlay" v-if="showModal" @click.self="showModal = false">
+    <div class="rm-modal-overlay" v-if="showModal">
       <div class="rm-modal">
         <div class="rm-modal-header">
           <h3>{{ editingId ? 'Editar Informe' : 'Nuevo Informe de Trabajo' }}</h3>
