@@ -3,8 +3,9 @@ import { ref, computed, onMounted } from 'vue';
 import DashboardCard from '../components/DashboardCard.vue';
 import { supabase } from '../supabase';
 import { ESTADO_COLORS } from '../services/operations';
-import { updateTarea, COLUMNAS, createTareaRecurrente, FRECUENCIA_LABELS } from '../services/tareas';
-import type { TareaEstado, TareaPrioridad, FrecuenciaRecurrencia } from '../services/tareas';
+import { updateTarea, deleteTarea, deleteTareasFromDate, COLUMNAS, createTareaRecurrente, FRECUENCIA_LABELS } from '../services/tareas';
+import type { Tarea, TareaEstado, TareaPrioridad, FrecuenciaRecurrencia } from '../services/tareas';
+import TaskDetailPanel from '../components/TaskDetailPanel.vue';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -13,10 +14,19 @@ import type { TareaEstado, TareaPrioridad, FrecuenciaRecurrencia } from '../serv
 interface TareaRow {
   id: string;
   titulo: string;
+  descripcion: string | null;
   estado: TareaEstado;
   prioridad: TareaPrioridad;
+  proyecto_id: string | null;
+  lead_id: string | null;
+  asignado_a: string | null;
+  horas_estimadas: number;
   fecha_inicio_tarea: string | null;
   fecha_limite: string | null;
+  recurrencia_id: string | null;
+  es_recurrente: boolean;
+  frecuencia_recurrencia: FrecuenciaRecurrencia | null;
+  created_at: string;
 }
 
 interface ProyectoRow {
@@ -71,9 +81,10 @@ const selectedDay = ref<string | null>(null);
 
 // team + projects for the create form
 interface UsuarioAdmin { id: string; nombre: string }
-const equipo        = ref<UsuarioAdmin[]>([]);
-const proyList      = ref<{ id: string; nombre: string }[]>([]);
-const currentUserId = ref<string | null>(null);
+const equipo           = ref<UsuarioAdmin[]>([]);
+const proyList         = ref<{ id: string; nombre: string }[]>([]);
+const currentUserId    = ref<string | null>(null);
+const currentUserNombre = ref('');
 
 // ---------------------------------------------------------------------------
 // Navigation
@@ -186,7 +197,7 @@ async function fetchData() {
   loading.value = true;
   try {
     const [tareasRes, proyRes, equipoRes, proyListRes, userRes] = await Promise.all([
-      supabase.from('tareas').select('id, titulo, estado, prioridad, fecha_inicio_tarea, fecha_limite'),
+      supabase.from('tareas').select('id, titulo, descripcion, estado, prioridad, proyecto_id, lead_id, asignado_a, horas_estimadas, fecha_inicio_tarea, fecha_limite, recurrencia_id, es_recurrente, frecuencia_recurrencia, created_at'),
       supabase.from('proyectos').select('id, nombre, estado, fecha_entrega_estimada').not('fecha_entrega_estimada', 'is', null).neq('estado', 'Completado'),
       supabase.from('usuarios').select('id, nombre').eq('rol', 'ADMIN').order('nombre'),
       supabase.from('proyectos').select('id, nombre').neq('estado', 'Completado'),
@@ -197,6 +208,10 @@ async function fetchData() {
     equipo.value    = (equipoRes.data ?? []) as UsuarioAdmin[];
     proyList.value  = (proyListRes.data ?? []) as { id: string; nombre: string }[];
     currentUserId.value = userRes.data.user?.id ?? null;
+    if (currentUserId.value) {
+      const u = (equipoRes.data ?? []).find((u: any) => u.id === currentUserId.value) as any;
+      currentUserNombre.value = u?.nombre ?? 'Usuario';
+    }
   } catch (e) {
     console.error('CalendarioView fetch error', e);
   } finally {
@@ -308,6 +323,68 @@ async function changeEstado(ev: CalEvent, newEstado: TareaEstado) {
     console.error('Error updating task status', e);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Detail panel
+// ---------------------------------------------------------------------------
+
+const panelTarea = ref<Tarea | null>(null);
+
+function openPanel(tareaRow: TareaRow) {
+  panelTarea.value = tareaRow as unknown as Tarea;
+}
+
+function onPanelUpdated(updated: Tarea) {
+  const idx = tareas.value.findIndex(t => t.id === updated.id);
+  if (idx !== -1) tareas.value[idx] = { ...tareas.value[idx], ...updated } as TareaRow;
+  panelTarea.value = tareas.value[idx] as unknown as Tarea ?? updated;
+}
+
+function onPanelDeleted(id: string) {
+  tareas.value = tareas.value.filter(t => t.id !== id);
+  panelTarea.value = null;
+}
+
+// ---------------------------------------------------------------------------
+// Delete from calendar
+// ---------------------------------------------------------------------------
+
+const deleteDialogTarea = ref<TareaRow | null>(null);
+
+function requestDelete(tareaRow: TareaRow) {
+  if (tareaRow.es_recurrente && tareaRow.recurrencia_id) {
+    deleteDialogTarea.value = tareaRow;
+    return;
+  }
+  if (!confirm(`¿Eliminar "${tareaRow.titulo}"?`)) return;
+  doDeleteSingle(tareaRow.id);
+}
+
+async function doDeleteSingle(id: string) {
+  try {
+    await deleteTarea(id);
+    tareas.value = tareas.value.filter(t => t.id !== id);
+    if (panelTarea.value?.id === id) panelTarea.value = null;
+  } catch (e) { console.error(e); }
+}
+
+async function deleteOnlyThis() {
+  const t = deleteDialogTarea.value;
+  if (!t) return;
+  deleteDialogTarea.value = null;
+  await doDeleteSingle(t.id);
+}
+
+async function deleteThisAndFuture() {
+  const t = deleteDialogTarea.value;
+  if (!t || !t.recurrencia_id || !t.fecha_limite) return;
+  deleteDialogTarea.value = null;
+  try {
+    await deleteTareasFromDate(t.recurrencia_id, t.fecha_limite);
+    await fetchData();
+    if (panelTarea.value?.recurrencia_id === t.recurrencia_id) panelTarea.value = null;
+  } catch (e) { console.error(e); }
+}
 </script>
 
 <template>
@@ -396,7 +473,13 @@ async function changeEstado(ev: CalEvent, newEstado: TareaEstado) {
             >
               <div class="event-type-dot" :style="{ background: ev.color }"></div>
               <div class="event-details">
-                <div class="event-title">{{ ev.title }}</div>
+                <div class="event-title-row">
+                  <span class="event-title">{{ ev.title }}</span>
+                  <div v-if="ev.tareaRef" class="event-actions">
+                    <button class="ev-btn-edit" @click.stop="openPanel(ev.tareaRef!)">Editar</button>
+                    <button class="ev-btn-del" @click.stop="requestDelete(ev.tareaRef!)">×</button>
+                  </div>
+                </div>
                 <div class="event-meta">
                   <span v-if="ev.type === 'tarea'" class="ev-type">Tarea</span>
                   <span v-else class="ev-type proyecto">Proyecto</span>
@@ -413,6 +496,10 @@ async function changeEstado(ev: CalEvent, newEstado: TareaEstado) {
                     <option v-for="col in COLUMNAS" :key="col.key" :value="col.key">{{ col.label }}</option>
                   </select>
                   <span v-else class="ev-badge muted">{{ ev.estado }}</span>
+
+                  <span v-if="ev.tareaRef?.es_recurrente && ev.tareaRef?.frecuencia_recurrencia" class="ev-badge recurrent">
+                    ↻ {{ FRECUENCIA_LABELS[ev.tareaRef.frecuencia_recurrencia] }}
+                  </span>
                 </div>
 
                 <!-- Date range info -->
@@ -425,6 +512,39 @@ async function changeEstado(ev: CalEvent, newEstado: TareaEstado) {
         </div>
       </template>
     </DashboardCard>
+
+    <!-- Task detail panel -->
+    <Teleport to="body">
+      <TaskDetailPanel
+        v-if="panelTarea"
+        :tarea="panelTarea"
+        :equipo="equipo"
+        :proyectos="proyList"
+        :current-user-id="currentUserId"
+        :current-user-nombre="currentUserNombre"
+        @close="panelTarea = null"
+        @updated="onPanelUpdated"
+        @deleted="onPanelDeleted"
+      />
+
+      <!-- Delete dialog for recurring tasks -->
+      <div v-if="deleteDialogTarea" class="modal-overlay">
+        <div class="modal modal-sm">
+          <div class="modal-header">
+            <h2 class="modal-title">Eliminar tarea recurrente</h2>
+            <button class="modal-close" @click="deleteDialogTarea = null">×</button>
+          </div>
+          <div class="delete-dialog-body">
+            <p class="delete-dialog-msg">¿Cómo deseas eliminar <strong>{{ deleteDialogTarea.titulo }}</strong>?</p>
+            <div class="delete-dialog-actions">
+              <button class="btn-secondary" @click="deleteDialogTarea = null">Cancelar</button>
+              <button class="btn-danger" @click="deleteOnlyThis">Solo esta</button>
+              <button class="btn-danger" @click="deleteThisAndFuture">Esta y las siguientes</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- Create task modal -->
     <Teleport to="body">
@@ -793,6 +913,93 @@ async function changeEstado(ev: CalEvent, newEstado: TareaEstado) {
 .estado-select:focus { outline: none; border-color: var(--color-primary); }
 
 .ev-range { font-size: 0.72rem; color: var(--color-text-muted); margin-top: 4px; }
+
+.event-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.event-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.event-item:hover .event-actions { opacity: 1; }
+
+.ev-btn-edit {
+  background: var(--color-bg-lighter);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.15s, border-color 0.15s;
+}
+.ev-btn-edit:hover { color: var(--color-primary); border-color: var(--color-primary); }
+
+.ev-btn-del {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  padding: 0 4px;
+  cursor: pointer;
+  line-height: 1;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+.ev-btn-del:hover { color: #f87171; }
+
+.ev-badge.recurrent {
+  background: var(--color-primary)18;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary)44;
+}
+
+/* ── Delete dialog ─────────────────────────────────────────────────────────── */
+.modal-sm { max-width: 400px; }
+
+.delete-dialog-body {
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.delete-dialog-msg {
+  font-size: 0.9rem;
+  color: var(--color-text-light);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.delete-dialog-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.btn-danger {
+  background: #ef444422;
+  color: #f87171;
+  border: 1px solid #ef444455;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-family: inherit;
+}
+.btn-danger:hover { background: #ef444444; }
 
 /* ── Loading ───────────────────────────────────────────────────────────────── */
 .loading-msg { text-align: center; color: var(--color-text-muted); padding: 3rem 0; }
