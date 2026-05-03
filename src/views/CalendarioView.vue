@@ -3,8 +3,8 @@ import { ref, computed, onMounted } from 'vue';
 import DashboardCard from '../components/DashboardCard.vue';
 import { supabase } from '../supabase';
 import { ESTADO_COLORS } from '../services/operations';
-import { updateTarea, COLUMNAS } from '../services/tareas';
-import type { TareaEstado, TareaPrioridad } from '../services/tareas';
+import { updateTarea, COLUMNAS, createTareaRecurrente, FRECUENCIA_LABELS } from '../services/tareas';
+import type { TareaEstado, TareaPrioridad, FrecuenciaRecurrencia } from '../services/tareas';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -248,12 +248,15 @@ interface CreateForm {
   asignado_a: string | null;
   fecha_inicio_tarea: string;
   fecha_limite: string;
+  es_recurrente: boolean;
+  frecuencia_recurrencia: FrecuenciaRecurrencia;
 }
 
 const createForm = ref<CreateForm>({
   titulo: '', estado: 'backlog', prioridad: 'Media',
   proyecto_id: null, asignado_a: null,
   fecha_inicio_tarea: toKey(today), fecha_limite: toKey(today),
+  es_recurrente: false, frecuencia_recurrencia: 'semanal',
 });
 
 const savingCreate = ref(false);
@@ -262,7 +265,7 @@ async function submitCreate() {
   if (!createForm.value.titulo.trim()) return;
   savingCreate.value = true;
   try {
-    const payload = {
+    const basePayload = {
       titulo:             createForm.value.titulo.trim(),
       estado:             createForm.value.estado,
       prioridad:          createForm.value.prioridad,
@@ -271,11 +274,19 @@ async function submitCreate() {
       fecha_inicio_tarea: createForm.value.fecha_inicio_tarea || null,
       fecha_limite:       createForm.value.fecha_limite || null,
     };
-    const { data, error } = await supabase.from('tareas').insert(payload).select('id, titulo, estado, prioridad, fecha_inicio_tarea, fecha_limite').single();
-    if (error) throw error;
-    tareas.value.push(data as TareaRow);
+
+    if (createForm.value.es_recurrente) {
+      if (!createForm.value.fecha_limite) return;
+      await createTareaRecurrente(basePayload, createForm.value.frecuencia_recurrencia);
+      await fetchData();
+    } else {
+      const { data, error } = await supabase.from('tareas').insert(basePayload).select('id, titulo, estado, prioridad, fecha_inicio_tarea, fecha_limite').single();
+      if (error) throw error;
+      tareas.value.push(data as TareaRow);
+    }
+
     showCreate.value = false;
-    createForm.value = { titulo: '', estado: 'backlog', prioridad: 'Media', proyecto_id: null, asignado_a: null, fecha_inicio_tarea: toKey(today), fecha_limite: toKey(today) };
+    createForm.value = { titulo: '', estado: 'backlog', prioridad: 'Media', proyecto_id: null, asignado_a: null, fecha_inicio_tarea: toKey(today), fecha_limite: toKey(today), es_recurrente: false, frecuencia_recurrencia: 'semanal' };
   } catch (e) {
     console.error('Error creating task', e);
   } finally {
@@ -471,6 +482,22 @@ async function changeEstado(ev: CalEvent, newEstado: TareaEstado) {
                 <option :value="null">Sin asignar</option>
                 <option v-for="u in equipo" :key="u.id" :value="u.id">{{ u.nombre }}</option>
               </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Recurrencia</label>
+              <div class="recurrencia-row">
+                <button
+                  type="button"
+                  class="toggle-recurrencia"
+                  :class="{ active: createForm.es_recurrente }"
+                  @click="createForm.es_recurrente = !createForm.es_recurrente"
+                >↻ {{ createForm.es_recurrente ? 'Recurrente' : 'Sin recurrencia' }}</button>
+                <select v-if="createForm.es_recurrente" v-model="createForm.frecuencia_recurrencia" class="form-input form-select recurrencia-freq">
+                  <option v-for="(label, key) in FRECUENCIA_LABELS" :key="key" :value="key">{{ label }}</option>
+                </select>
+              </div>
+              <p v-if="createForm.es_recurrente && !createForm.fecha_limite" class="recurrencia-hint">Necesita fecha límite para generar instancias</p>
             </div>
 
             <div class="modal-actions">
@@ -884,6 +911,48 @@ async function changeEstado(ev: CalEvent, newEstado: TareaEstado) {
   gap: 10px;
   padding-top: 14px;
   border-top: 1px solid var(--color-border);
+}
+
+/* ── Recurrencia ───────────────────────────────────────────────────────────── */
+.recurrencia-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toggle-recurrencia {
+  background: var(--color-bg-lighter);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.toggle-recurrencia:hover {
+  color: var(--color-text-light);
+  border-color: var(--color-primary);
+}
+
+.toggle-recurrencia.active {
+  background: var(--color-primary)22;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.recurrencia-freq { flex: 1; min-width: 120px; }
+
+.recurrencia-hint {
+  font-size: 0.75rem;
+  color: #ffa500;
+  margin: 0;
 }
 
 /* ── Mobile ────────────────────────────────────────────────────────────────── */

@@ -3,6 +3,7 @@ import { supabase } from '../supabase';
 
 export type TareaEstado = 'backlog' | 'en_progreso' | 'revision' | 'completado';
 export type TareaPrioridad = 'Baja' | 'Media' | 'Alta';
+export type FrecuenciaRecurrencia = 'diaria' | 'semanal' | 'quincenal' | 'mensual';
 
 export type Tarea = {
   id: string;
@@ -16,6 +17,9 @@ export type Tarea = {
   horas_estimadas: number;
   fecha_inicio_tarea: string | null;
   fecha_limite: string | null;
+  recurrencia_id: string | null;
+  es_recurrente: boolean;
+  frecuencia_recurrencia: FrecuenciaRecurrencia | null;
   created_at: string;
   // joins
   proyectos?: { nombre: string } | null;
@@ -24,17 +28,35 @@ export type Tarea = {
 };
 
 export const COLUMNAS: { key: TareaEstado; label: string; color: string }[] = [
-  { key: 'backlog',     label: 'Pendiente',    color: '#94a3b8' },
-  { key: 'en_progreso', label: 'En progreso',  color: '#e3ff04' },
-  { key: 'revision',   label: 'Revisión',      color: '#ffa500' },
-  { key: 'completado', label: 'Completado',    color: '#4ade80' },
+  { key: 'backlog',     label: 'Pendiente',   color: '#94a3b8' },
+  { key: 'en_progreso', label: 'En progreso', color: '#e3ff04' },
+  { key: 'revision',   label: 'Revisión',     color: '#ffa500' },
+  { key: 'completado', label: 'Completado',   color: '#4ade80' },
 ];
 
 export const PRIORIDAD_COLOR: Record<TareaPrioridad, string> = {
-  Alta:  '#ff4444',
-  Media: '#ffa500',
-  Baja:  '#94a3b8',
+  Alta: '#ff4444', Media: '#ffa500', Baja: '#94a3b8',
 };
+
+export const FRECUENCIA_LABELS: Record<FrecuenciaRecurrencia, string> = {
+  diaria: 'Diaria', semanal: 'Semanal', quincenal: 'Quincenal', mensual: 'Mensual',
+};
+
+// Número de instancias futuras a generar por frecuencia
+const FRECUENCIA_COUNT: Record<FrecuenciaRecurrencia, number> = {
+  diaria: 60, semanal: 52, quincenal: 26, mensual: 24,
+};
+
+function advanceDate(dateStr: string, frecuencia: FrecuenciaRecurrencia, n: number): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  for (let i = 0; i < n; i++) {
+    if (frecuencia === 'diaria')    d.setDate(d.getDate() + 1);
+    if (frecuencia === 'semanal')   d.setDate(d.getDate() + 7);
+    if (frecuencia === 'quincenal') d.setDate(d.getDate() + 14);
+    if (frecuencia === 'mensual')   d.setMonth(d.getMonth() + 1);
+  }
+  return d.toISOString().split('T')[0] ?? dateStr;
+}
 
 function stripTareaJoins(t: Partial<Tarea>): Partial<Tarea> {
   const { proyectos, leads, usuarios, ...clean } = t as any;
@@ -74,6 +96,47 @@ export async function createTarea(form: Partial<Tarea>): Promise<Tarea> {
   return data as Tarea;
 }
 
+// Crea la tarea base + todas las instancias futuras con el mismo recurrencia_id
+export async function createTareaRecurrente(
+  base: Partial<Tarea>,
+  frecuencia: FrecuenciaRecurrencia,
+): Promise<void> {
+  const recurrencia_id = crypto.randomUUID();
+  const count = FRECUENCIA_COUNT[frecuencia];
+  const baseLimite = base.fecha_limite!;
+  const baseInicio = base.fecha_inicio_tarea ?? null;
+
+  // Offset días entre inicio y límite (para mantener el rango en cada instancia)
+  const offsetDias = baseInicio
+    ? Math.round((new Date(baseLimite + 'T00:00:00').getTime() - new Date(baseInicio + 'T00:00:00').getTime()) / 86400000)
+    : null;
+
+  const payloads: Partial<Tarea>[] = [];
+  for (let i = 0; i <= count; i++) {
+    const limite = i === 0 ? baseLimite : advanceDate(baseLimite, frecuencia, i);
+    const inicio = offsetDias !== null && baseInicio
+      ? (i === 0 ? baseInicio : (() => {
+          const d = new Date(limite + 'T00:00:00');
+          d.setDate(d.getDate() - offsetDias);
+          return d.toISOString().split('T')[0] ?? baseInicio;
+        })())
+      : null;
+
+    payloads.push(stripTareaJoins({
+      ...base,
+      fecha_limite:           limite,
+      fecha_inicio_tarea:     inicio,
+      recurrencia_id,
+      es_recurrente:          true,
+      frecuencia_recurrencia: frecuencia,
+      estado:                 'backlog' as TareaEstado,
+    }));
+  }
+
+  const { error } = await supabase.from('tareas').insert(payloads);
+  if (error) throw error;
+}
+
 export async function updateTarea(id: string, updates: Partial<Tarea>): Promise<Tarea> {
   const payload = stripTareaJoins(updates);
 
@@ -89,5 +152,15 @@ export async function updateTarea(id: string, updates: Partial<Tarea>): Promise<
 
 export async function deleteTarea(id: string): Promise<void> {
   const { error } = await supabase.from('tareas').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// Elimina esta instancia y todas las posteriores del mismo grupo recurrente
+export async function deleteTareasFromDate(recurrenciaId: string, fromDate: string): Promise<void> {
+  const { error } = await supabase
+    .from('tareas')
+    .delete()
+    .eq('recurrencia_id', recurrenciaId)
+    .gte('fecha_limite', fromDate);
   if (error) throw error;
 }

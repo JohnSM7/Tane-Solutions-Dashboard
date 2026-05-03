@@ -85,6 +85,9 @@
                 class="meta-tag date-tag"
                 :class="{ overdue: isOverdue(tarea.fecha_limite) }"
               >{{ formatDate(tarea.fecha_limite) }}</span>
+              <span v-if="tarea.es_recurrente && tarea.frecuencia_recurrencia" class="meta-tag recurrent-tag">
+                ↻ {{ FRECUENCIA_LABELS[tarea.frecuencia_recurrencia] }}
+              </span>
             </div>
 
             <!-- Assignee -->
@@ -161,6 +164,24 @@
                 <input v-model="form.fecha_limite" class="form-input" type="date" />
               </div>
             </div>
+            <div class="form-group">
+              <label class="form-label">Recurrencia</label>
+              <div class="recurrencia-row">
+                <button
+                  type="button"
+                  class="toggle-recurrencia"
+                  :class="{ active: form.es_recurrente }"
+                  @click="form.es_recurrente = !form.es_recurrente"
+                >↻ {{ form.es_recurrente ? 'Recurrente' : 'Sin recurrencia' }}</button>
+                <select v-if="form.es_recurrente" v-model="form.frecuencia_recurrencia" class="form-input form-select recurrencia-freq">
+                  <option value="diaria">Diaria</option>
+                  <option value="semanal">Semanal</option>
+                  <option value="quincenal">Quincenal</option>
+                  <option value="mensual">Mensual</option>
+                </select>
+              </div>
+              <p v-if="form.es_recurrente && !form.fecha_limite" class="recurrencia-hint">Necesita fecha límite para generar instancias</p>
+            </div>
             <div class="modal-actions">
               <button type="button" class="btn-secondary" @click="closeModal">Cancelar</button>
               <button type="submit" class="btn-primary" :disabled="saving">
@@ -168,6 +189,24 @@
               </button>
             </div>
           </form>
+        </div>
+      </div>
+
+      <!-- Delete dialog for recurring tasks -->
+      <div v-if="deleteDialogTarea" class="modal-overlay">
+        <div class="modal modal-sm">
+          <div class="modal-header">
+            <h2 class="modal-title">Eliminar tarea recurrente</h2>
+            <button class="modal-close" @click="deleteDialogTarea = null">×</button>
+          </div>
+          <div class="delete-dialog-body">
+            <p class="delete-dialog-msg">¿Cómo deseas eliminar <strong>{{ deleteDialogTarea.titulo }}</strong>?</p>
+            <div class="delete-dialog-actions">
+              <button class="btn-secondary" @click="deleteDialogTarea = null">Cancelar</button>
+              <button class="btn-danger" @click="deleteOnlyThis">Solo esta</button>
+              <button class="btn-danger" @click="deleteThisAndFuture">Esta y las siguientes</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -189,8 +228,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useTareas, createTarea, deleteTarea, COLUMNAS, PRIORIDAD_COLOR, updateTarea } from '../services/tareas'
-import type { Tarea, TareaEstado, TareaPrioridad } from '../services/tareas'
+import { useTareas, createTarea, createTareaRecurrente, deleteTarea, deleteTareasFromDate, COLUMNAS, PRIORIDAD_COLOR, updateTarea, FRECUENCIA_LABELS } from '../services/tareas'
+import type { Tarea, TareaEstado, TareaPrioridad, FrecuenciaRecurrencia } from '../services/tareas'
 import { useToast } from '../composables/useToast'
 import { supabase } from '../supabase'
 import TaskDetailPanel from '../components/TaskDetailPanel.vue'
@@ -335,7 +374,13 @@ async function onDrop(targetEstado: string) {
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
+const deleteDialogTarea = ref<Tarea | null>(null)
+
 async function confirmDelete(tarea: Tarea) {
+  if (tarea.es_recurrente && tarea.recurrencia_id) {
+    deleteDialogTarea.value = tarea
+    return
+  }
   if (!confirm(`¿Eliminar la tarea "${tarea.titulo}"?`)) return
   try {
     await deleteTarea(tarea.id)
@@ -343,6 +388,34 @@ async function confirmDelete(tarea: Tarea) {
     success('Tarea eliminada')
   } catch {
     error('Error al eliminar la tarea')
+  }
+}
+
+async function deleteOnlyThis() {
+  const tarea = deleteDialogTarea.value
+  if (!tarea) return
+  deleteDialogTarea.value = null
+  try {
+    await deleteTarea(tarea.id)
+    await refresh()
+    if (panelTarea.value?.id === tarea.id) panelTarea.value = null
+    success('Tarea eliminada')
+  } catch {
+    error('Error al eliminar la tarea')
+  }
+}
+
+async function deleteThisAndFuture() {
+  const tarea = deleteDialogTarea.value
+  if (!tarea || !tarea.recurrencia_id || !tarea.fecha_limite) return
+  deleteDialogTarea.value = null
+  try {
+    await deleteTareasFromDate(tarea.recurrencia_id, tarea.fecha_limite)
+    await refresh()
+    if (panelTarea.value?.recurrencia_id === tarea.recurrencia_id) panelTarea.value = null
+    success('Tareas eliminadas')
+  } catch {
+    error('Error al eliminar las tareas')
   }
 }
 
@@ -382,6 +455,8 @@ interface FormState {
   asignado_a: string | null
   horas_estimadas: number
   fecha_limite: string
+  es_recurrente: boolean
+  frecuencia_recurrencia: FrecuenciaRecurrencia
 }
 
 const defaultForm = (): FormState => ({
@@ -393,6 +468,8 @@ const defaultForm = (): FormState => ({
   asignado_a: null,
   horas_estimadas: 0,
   fecha_limite: '',
+  es_recurrente: false,
+  frecuencia_recurrencia: 'semanal',
 })
 
 const form = ref<FormState>(defaultForm())
@@ -411,7 +488,7 @@ async function submitForm() {
   if (!form.value.titulo.trim()) return
   saving.value = true
   try {
-    const created = await createTarea({
+    const basePayload = {
       titulo:          form.value.titulo.trim(),
       descripcion:     form.value.descripcion.trim() || null,
       estado:          form.value.estado,
@@ -420,13 +497,26 @@ async function submitForm() {
       asignado_a:      form.value.asignado_a || null,
       horas_estimadas: form.value.horas_estimadas || 0,
       fecha_limite:    form.value.fecha_limite || null,
-    })
-    await refresh()
-    closeModal()
-    // Abrir el panel de la tarea recién creada
-    const nueva = tareas.value.find(t => t.id === created.id) ?? created
-    panelTarea.value = nueva
-    success('Tarea creada')
+    }
+
+    if (form.value.es_recurrente) {
+      if (!form.value.fecha_limite) {
+        error('La tarea recurrente necesita una fecha límite')
+        saving.value = false
+        return
+      }
+      await createTareaRecurrente(basePayload, form.value.frecuencia_recurrencia)
+      await refresh()
+      closeModal()
+      success(`Tarea recurrente (${FRECUENCIA_LABELS[form.value.frecuencia_recurrencia]}) creada`)
+    } else {
+      const created = await createTarea(basePayload)
+      await refresh()
+      closeModal()
+      const nueva = tareas.value.find(t => t.id === created.id) ?? created
+      panelTarea.value = nueva
+      success('Tarea creada')
+    }
   } catch {
     error('Error al crear la tarea')
   } finally {
@@ -891,6 +981,100 @@ async function submitForm() {
   padding-top: 16px;
   border-top: 1px solid var(--color-border);
 }
+
+/* ── Recurrencia ───────────────────────────────────────────────────────────── */
+.recurrencia-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toggle-recurrencia {
+  background: var(--color-bg-lighter);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.toggle-recurrencia:hover {
+  color: var(--color-text-light);
+  border-color: var(--color-primary);
+}
+
+.toggle-recurrencia.active {
+  background: var(--color-primary)22;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.recurrencia-freq {
+  flex: 1;
+  min-width: 120px;
+}
+
+.recurrencia-hint {
+  font-size: 0.75rem;
+  color: #ffa500;
+  margin: 0;
+}
+
+/* ── Recurrent badge ───────────────────────────────────────────────────────── */
+.recurrent-tag {
+  background: var(--color-primary)18;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary)44;
+  font-weight: 600;
+}
+
+/* ── Delete dialog ─────────────────────────────────────────────────────────── */
+.modal-sm {
+  max-width: 400px;
+}
+
+.delete-dialog-body {
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.delete-dialog-msg {
+  font-size: 0.9rem;
+  color: var(--color-text-light);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.delete-dialog-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.btn-danger {
+  background: #ef444422;
+  color: #f87171;
+  border: 1px solid #ef444455;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-family: inherit;
+}
+
+.btn-danger:hover { background: #ef444444; }
 
 /* ── Responsive ────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {

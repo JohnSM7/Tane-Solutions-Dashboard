@@ -11,7 +11,24 @@
               <option v-for="col in COLUMNAS" :key="col.key" :value="col.key">{{ col.label }}</option>
             </select>
           </div>
-          <button class="btn-delete-panel" title="Eliminar tarea" @click="handleDelete">Eliminar</button>
+          <div class="panel-header-right">
+            <span v-if="tarea.es_recurrente && tarea.frecuencia_recurrencia" class="recurrent-badge">
+              ↻ {{ FRECUENCIA_LABELS[tarea.frecuencia_recurrencia] }}
+            </span>
+            <button class="btn-delete-panel" title="Eliminar tarea" @click="handleDelete">Eliminar</button>
+          </div>
+        </div>
+
+        <!-- Delete dialog for recurring tasks -->
+        <div v-if="showDeleteDialog" class="delete-dialog-overlay">
+          <div class="delete-dialog">
+            <p class="delete-dialog-msg">¿Cómo deseas eliminar <strong>{{ tarea.titulo }}</strong>?</p>
+            <div class="delete-dialog-actions">
+              <button class="btn-cancel" @click="showDeleteDialog = false">Cancelar</button>
+              <button class="btn-danger" @click="deleteOnlyThis">Solo esta</button>
+              <button class="btn-danger" @click="deleteThisAndFuture">Esta y las siguientes</button>
+            </div>
+          </div>
         </div>
 
         <!-- Scrollable body -->
@@ -195,7 +212,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { COLUMNAS, updateTarea, deleteTarea } from '../services/tareas'
+import { COLUMNAS, updateTarea, deleteTarea, deleteTareasFromDate, FRECUENCIA_LABELS } from '../services/tareas'
 import type { Tarea, TareaEstado, TareaPrioridad } from '../services/tareas'
 import { getSubtareasByTarea, createSubtarea, toggleSubtarea, deleteSubtarea } from '../services/subtareas'
 import type { Subtarea } from '../services/subtareas'
@@ -281,9 +298,28 @@ async function saveDetails() {
   }
 }
 
+const showDeleteDialog = ref(false)
+
 async function handleDelete() {
+  if (props.tarea.es_recurrente && props.tarea.recurrencia_id) {
+    showDeleteDialog.value = true
+    return
+  }
   if (!confirm(`¿Eliminar la tarea "${props.tarea.titulo}"?`)) return
   await deleteTarea(props.tarea.id)
+  emit('deleted', props.tarea.id)
+}
+
+async function deleteOnlyThis() {
+  showDeleteDialog.value = false
+  await deleteTarea(props.tarea.id)
+  emit('deleted', props.tarea.id)
+}
+
+async function deleteThisAndFuture() {
+  showDeleteDialog.value = false
+  if (!props.tarea.recurrencia_id || !props.tarea.fecha_limite) return
+  await deleteTareasFromDate(props.tarea.recurrencia_id, props.tarea.fecha_limite)
   emit('deleted', props.tarea.id)
 }
 
@@ -432,6 +468,7 @@ onMounted(() => Promise.all([loadSubtareas(), loadHoras(), loadComentarios()]))
   flex-direction: column;
   animation: slideIn 0.2s ease;
   overflow: hidden;
+  position: relative;
 }
 
 @keyframes slideIn {
@@ -479,6 +516,22 @@ onMounted(() => Promise.all([loadSubtareas(), loadHoras(), loadComentarios()]))
   font-family: inherit;
 }
 
+.panel-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.recurrent-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--color-primary)18;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary)44;
+}
+
 .btn-delete-panel {
   background: none;
   border: 1px solid transparent;
@@ -495,6 +548,74 @@ onMounted(() => Promise.all([loadSubtareas(), loadHoras(), loadComentarios()]))
   border-color: #f8717155;
   background: #f8717111;
 }
+
+/* ── Delete dialog ─────────────────────────────────────────────────────────── */
+.delete-dialog-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.delete-dialog {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 360px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.delete-dialog-msg {
+  font-size: 0.9rem;
+  color: var(--color-text-light);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.delete-dialog-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.btn-cancel {
+  background: var(--color-bg-lighter);
+  color: var(--color-text-light);
+  border: 1px solid var(--color-border);
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.btn-cancel:hover { background: var(--color-bg-card); }
+
+.btn-danger {
+  background: #ef444422;
+  color: #f87171;
+  border: 1px solid #ef444455;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-family: inherit;
+}
+
+.btn-danger:hover { background: #ef444444; }
 
 /* ── Body ──────────────────────────────────────────────────────────────────── */
 .panel-body {
