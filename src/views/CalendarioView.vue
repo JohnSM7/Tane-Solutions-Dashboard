@@ -43,7 +43,7 @@ const PRIORIDAD_COLOR: Record<string, string> = {
   Baja:  '#94a3b8',
 };
 
-const DIAS_SEMANA = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+const DIAS_SEMANA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 const MESES_ES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -58,39 +58,29 @@ const today = new Date();
 today.setHours(0, 0, 0, 0);
 
 const currentYear  = ref(today.getFullYear());
-const currentMonth = ref(today.getMonth()); // 0-indexed
+const currentMonth = ref(today.getMonth());
 
-const events     = ref<CalEvent[]>([]);
-const loading    = ref(true);
-const selectedDay = ref<string | null>(null); // YYYY-MM-DD
+const events      = ref<CalEvent[]>([]);
+const loading     = ref(true);
+const selectedDay = ref<string | null>(null);
 
 // ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
 
 function prevMonth() {
-  if (currentMonth.value === 0) {
-    currentMonth.value = 11;
-    currentYear.value -= 1;
-  } else {
-    currentMonth.value -= 1;
-  }
+  if (currentMonth.value === 0) { currentMonth.value = 11; currentYear.value -= 1; }
+  else { currentMonth.value -= 1; }
   selectedDay.value = null;
 }
 
 function nextMonth() {
-  if (currentMonth.value === 11) {
-    currentMonth.value = 0;
-    currentYear.value += 1;
-  } else {
-    currentMonth.value += 1;
-  }
+  if (currentMonth.value === 11) { currentMonth.value = 0; currentYear.value += 1; }
+  else { currentMonth.value += 1; }
   selectedDay.value = null;
 }
 
-const monthLabel = computed(
-  () => `${MESES_ES[currentMonth.value]} ${currentYear.value}`
-);
+const monthLabel = computed(() => `${MESES_ES[currentMonth.value]} ${currentYear.value}`);
 
 // ---------------------------------------------------------------------------
 // Calendar grid
@@ -98,7 +88,7 @@ const monthLabel = computed(
 
 interface DayCell {
   date: Date;
-  key: string;        // YYYY-MM-DD
+  key: string;
   dayNum: number;
   isCurrentMonth: boolean;
   isToday: boolean;
@@ -107,16 +97,12 @@ interface DayCell {
 const gridDays = computed<DayCell[]>(() => {
   const year  = currentYear.value;
   const month = currentMonth.value;
-
-  // First day of month (0=Sun…6=Sat). Convert to Mon-based (0=Mon…6=Sun).
   const firstDayRaw = new Date(year, month, 1).getDay();
-  const startOffset  = (firstDayRaw === 0 ? 6 : firstDayRaw - 1);
-
+  const startOffset = (firstDayRaw === 0 ? 6 : firstDayRaw - 1);
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const totalCells  = Math.ceil((startOffset + daysInMonth) / 7) * 7;
 
   const days: DayCell[] = [];
-
   for (let i = 0; i < totalCells; i++) {
     const d = new Date(year, month, 1 - startOffset + i);
     d.setHours(0, 0, 0, 0);
@@ -129,7 +115,6 @@ const gridDays = computed<DayCell[]>(() => {
       isToday: d.getTime() === today.getTime(),
     });
   }
-
   return days;
 });
 
@@ -138,15 +123,8 @@ const gridDays = computed<DayCell[]>(() => {
 // ---------------------------------------------------------------------------
 
 function toDateKey(d: Date): string {
-  const yyyy = d.getFullYear();
-  const mm   = String(d.getMonth() + 1).padStart(2, '0');
-  const dd   = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-
-// ---------------------------------------------------------------------------
-// Event map (keyed by YYYY-MM-DD)
-// ---------------------------------------------------------------------------
 
 const eventMap = computed<Record<string, CalEvent[]>>(() => {
   const map: Record<string, CalEvent[]> = {};
@@ -162,22 +140,15 @@ function eventsForDay(key: string): CalEvent[] {
 }
 
 // ---------------------------------------------------------------------------
-// Fetch data
+// Fetch
 // ---------------------------------------------------------------------------
 
 async function fetchEvents() {
   loading.value = true;
   try {
     const [tareasRes, proyectosRes] = await Promise.all([
-      supabase
-        .from('tareas')
-        .select('id, titulo, estado, prioridad, fecha_limite')
-        .not('fecha_limite', 'is', null),
-      supabase
-        .from('proyectos')
-        .select('id, nombre, estado, fecha_entrega_estimada')
-        .not('fecha_entrega_estimada', 'is', null)
-        .neq('estado', 'Completado'),
+      supabase.from('tareas').select('id, titulo, estado, prioridad, fecha_limite').not('fecha_limite', 'is', null),
+      supabase.from('proyectos').select('id, nombre, estado, fecha_entrega_estimada').not('fecha_entrega_estimada', 'is', null).neq('estado', 'Completado'),
     ]);
 
     const result: CalEvent[] = [];
@@ -185,31 +156,26 @@ async function fetchEvents() {
     for (const t of (tareasRes.data ?? []) as Tarea[]) {
       if (!t.fecha_limite) continue;
       result.push({
-        id:       t.id,
-        type:     'tarea',
-        title:    t.titulo,
-        color:    PRIORIDAD_COLOR[t.prioridad] ?? '#94a3b8',
-        estado:   t.estado,
-        prioridad: t.prioridad,
-        date:     t.fecha_limite.slice(0, 10),
+        id: t.id, type: 'tarea', title: t.titulo,
+        color: PRIORIDAD_COLOR[t.prioridad] ?? '#94a3b8',
+        estado: t.estado, prioridad: t.prioridad,
+        date: t.fecha_limite.slice(0, 10),
       });
     }
 
     for (const p of (proyectosRes.data ?? []) as Proyecto[]) {
       if (!p.fecha_entrega_estimada) continue;
       result.push({
-        id:     p.id,
-        type:   'proyecto',
-        title:  p.nombre,
-        color:  ESTADO_COLORS[p.estado] ?? '#e3ff04',
+        id: p.id, type: 'proyecto', title: p.nombre,
+        color: ESTADO_COLORS[p.estado] ?? '#e3ff04',
         estado: p.estado,
-        date:   p.fecha_entrega_estimada.slice(0, 10),
+        date: p.fecha_entrega_estimada.slice(0, 10),
       });
     }
 
     events.value = result;
   } catch (err) {
-    console.error('CalendarioView: error fetching events', err);
+    console.error('CalendarioView fetch error', err);
   } finally {
     loading.value = false;
   }
@@ -218,7 +184,7 @@ async function fetchEvents() {
 onMounted(fetchEvents);
 
 // ---------------------------------------------------------------------------
-// Day click
+// Day selection
 // ---------------------------------------------------------------------------
 
 function selectDay(cell: DayCell) {
@@ -238,170 +204,134 @@ const selectedDayLabel = computed<string>(() => {
 
 <template>
   <div class="calendario-view">
-    <!-- ------------------------------------------------------------------ -->
-    <!-- Header card                                                          -->
-    <!-- ------------------------------------------------------------------ -->
     <DashboardCard title="Calendario">
       <template #actions>
         <div class="legend">
-          <span class="legend-item">
-            <span class="legend-dot tarea-dot"></span> 🎫 Tarea (deadline)
-          </span>
-          <span class="legend-item">
-            <span class="legend-dot proyecto-dot"></span> 📁 Proyecto (fecha fin)
-          </span>
+          <span class="legend-item"><span class="legend-dot" style="background:#ffa500"></span>Tarea</span>
+          <span class="legend-item"><span class="legend-dot" style="background:#e3ff04"></span>Proyecto</span>
         </div>
       </template>
 
       <!-- Navigation -->
       <div class="nav-row">
-        <button class="nav-btn" @click="prevMonth">← Anterior</button>
+        <button class="nav-btn" @click="prevMonth">‹</button>
         <h2 class="month-label">{{ monthLabel }}</h2>
-        <button class="nav-btn" @click="nextMonth">Siguiente →</button>
+        <button class="nav-btn" @click="nextMonth">›</button>
       </div>
 
       <div v-if="loading" class="loading-msg">Cargando eventos…</div>
 
-      <div v-else class="calendar-layout">
+      <template v-else>
         <!-- Calendar grid -->
-        <div class="calendar-wrap">
+        <div class="cal-grid">
           <!-- Day-of-week headers -->
-          <div class="cal-grid">
-            <div
-              v-for="dia in DIAS_SEMANA"
-              :key="dia"
-              class="dow-header"
-            >{{ dia }}</div>
+          <div v-for="dia in DIAS_SEMANA" :key="dia" class="dow-header">{{ dia }}</div>
 
-            <!-- Day cells -->
-            <div
-              v-for="cell in gridDays"
-              :key="cell.key"
-              class="day-cell"
-              :class="{
-                'outside-month': !cell.isCurrentMonth,
-                'is-today': cell.isToday,
-                'is-selected': selectedDay === cell.key,
-              }"
-              @click="selectDay(cell)"
-            >
-              <!-- Day number -->
-              <div class="day-num-wrap">
-                <span
-                  class="day-num"
-                  :class="{ 'today-circle': cell.isToday }"
-                >{{ cell.dayNum }}</span>
-              </div>
+          <!-- Day cells -->
+          <div
+            v-for="cell in gridDays"
+            :key="cell.key"
+            class="day-cell"
+            :class="{
+              'outside-month': !cell.isCurrentMonth,
+              'is-today':      cell.isToday,
+              'is-selected':   selectedDay === cell.key,
+            }"
+            @click="selectDay(cell)"
+          >
+            <div class="day-num-wrap">
+              <span class="day-num" :class="{ 'today-circle': cell.isToday }">{{ cell.dayNum }}</span>
+            </div>
 
-              <!-- Event pills (up to 3) -->
-              <div class="pills-wrap">
-                <template v-for="(ev, idx) in eventsForDay(cell.key)" :key="ev.id">
-                  <div
-                    v-if="idx < 3"
-                    class="pill"
-                    :style="{ backgroundColor: ev.color + '22', borderLeft: `3px solid ${ev.color}`, color: ev.color }"
-                  >
-                    <span class="pill-icon">{{ ev.type === 'tarea' ? '🎫' : '📁' }}</span>
-                    <span class="pill-text">{{ ev.title }}</span>
-                  </div>
-                </template>
-                <div
-                  v-if="eventsForDay(cell.key).length > 3"
-                  class="pill pill-overflow"
-                >+{{ eventsForDay(cell.key).length - 3 }} más</div>
+            <div class="pills-wrap">
+              <div
+                v-for="(ev, idx) in eventsForDay(cell.key)"
+                :key="ev.id"
+                class="pill"
+                :class="{ 'pill-hidden': idx >= 2 }"
+                :style="{ background: ev.color + '22', borderLeftColor: ev.color, color: ev.color }"
+              >
+                <span class="pill-text">{{ ev.title }}</span>
               </div>
+              <div
+                v-if="eventsForDay(cell.key).length > 2"
+                class="pill pill-more"
+              >+{{ eventsForDay(cell.key).length - 2 }}</div>
             </div>
           </div>
         </div>
 
-        <!-- Sidebar for selected day -->
-        <aside v-if="selectedDay" class="day-sidebar">
-          <div class="sidebar-header">
-            <span class="sidebar-title">{{ selectedDayLabel }}</span>
+        <!-- Selected day panel -->
+        <div v-if="selectedDay" class="day-panel">
+          <div class="day-panel-header">
+            <span class="day-panel-title">{{ selectedDayLabel }}</span>
             <button class="close-btn" @click="selectedDay = null">✕</button>
           </div>
 
-          <div v-if="selectedDayEvents.length === 0" class="no-events">
-            Sin eventos este día.
-          </div>
+          <div v-if="selectedDayEvents.length === 0" class="no-events">Sin eventos este día.</div>
 
-          <ul v-else class="event-list">
-            <li
+          <div v-else class="event-list">
+            <div
               v-for="ev in selectedDayEvents"
               :key="ev.id"
               class="event-item"
-              :style="{ borderLeft: `4px solid ${ev.color}` }"
+              :style="{ borderLeftColor: ev.color }"
             >
-              <div class="event-icon">{{ ev.type === 'tarea' ? '🎫' : '📁' }}</div>
+              <div class="event-type-dot" :style="{ background: ev.color }"></div>
               <div class="event-details">
                 <div class="event-title">{{ ev.title }}</div>
                 <div class="event-meta">
-                  <span class="meta-tag" :style="{ color: ev.color }">{{ ev.estado }}</span>
-                  <span v-if="ev.prioridad" class="meta-tag muted">{{ ev.prioridad }}</span>
-                  <span class="meta-tag muted type-label">
-                    {{ ev.type === 'tarea' ? 'Tarea' : 'Proyecto' }}
-                  </span>
+                  <span class="ev-badge" :style="{ color: ev.color, background: ev.color + '22' }">{{ ev.estado }}</span>
+                  <span v-if="ev.prioridad" class="ev-badge muted">{{ ev.prioridad }}</span>
+                  <span class="ev-badge muted">{{ ev.type === 'tarea' ? 'Tarea' : 'Proyecto' }}</span>
                 </div>
               </div>
-            </li>
-          </ul>
-        </aside>
-      </div>
+            </div>
+          </div>
+        </div>
+      </template>
     </DashboardCard>
   </div>
 </template>
 
 <style scoped>
-/* -------------------------------------------------------------------------
-   Layout
-------------------------------------------------------------------------- */
+/* ── Layout ────────────────────────────────────────────────────────────────── */
 .calendario-view {
   padding: 1.5rem;
-  max-width: 1400px;
-  margin: 0 auto;
 }
 
-/* -------------------------------------------------------------------------
-   Legend
-------------------------------------------------------------------------- */
+/* ── Legend ────────────────────────────────────────────────────────────────── */
 .legend {
   display: flex;
   gap: 1rem;
   align-items: center;
-  flex-wrap: wrap;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 6px;
   font-size: 0.8rem;
   color: var(--color-text-muted);
 }
 
 .legend-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 2px;
-  display: inline-block;
+  flex-shrink: 0;
 }
 
-.tarea-dot   { background: #ffa500; }
-.proyecto-dot { background: #e3ff04; }
-
-/* -------------------------------------------------------------------------
-   Navigation row
-------------------------------------------------------------------------- */
+/* ── Navigation ────────────────────────────────────────────────────────────── */
 .nav-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1.25rem;
-  gap: 1rem;
+  margin-bottom: 1rem;
 }
 
 .month-label {
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   font-weight: 700;
   color: var(--color-text-light);
   margin: 0;
@@ -413,110 +343,94 @@ const selectedDayLabel = computed<string>(() => {
   background: var(--color-bg-lighter);
   border: 1px solid var(--color-border);
   color: var(--color-text-light);
-  padding: 0.4rem 0.9rem;
-  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: 0.85rem;
-  transition: border-color 0.2s, background 0.2s;
-  white-space: nowrap;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s, background 0.15s;
+  flex-shrink: 0;
 }
 
 .nav-btn:hover {
   border-color: var(--color-primary);
-  background: rgba(227, 255, 4, 0.08);
+  background: var(--color-primary)11;
 }
 
-/* -------------------------------------------------------------------------
-   Loading
-------------------------------------------------------------------------- */
-.loading-msg {
-  text-align: center;
-  color: var(--color-text-muted);
-  padding: 3rem 0;
-}
-
-/* -------------------------------------------------------------------------
-   Calendar layout (grid + sidebar)
-------------------------------------------------------------------------- */
-.calendar-layout {
-  display: flex;
-  gap: 1.25rem;
-  align-items: flex-start;
-}
-
-.calendar-wrap {
-  flex: 1;
-  min-width: 0;
-}
-
-/* -------------------------------------------------------------------------
-   Calendar grid
-------------------------------------------------------------------------- */
+/* ── Calendar Grid ─────────────────────────────────────────────────────────── */
 .cal-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  border-left: 1px solid var(--color-border);
-  border-top: 1px solid var(--color-border);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
+/* ── Day-of-week headers ───────────────────────────────────────────────────── */
 .dow-header {
-  border-right: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
-  text-align: center;
-  padding: 0.4rem 0;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
   background: var(--color-bg-lighter);
+  border-bottom: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
+  text-align: center;
+  padding: 8px 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
+.dow-header:last-child { border-right: none; }
+
+/* ── Day cells ─────────────────────────────────────────────────────────────── */
 .day-cell {
   border-right: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
-  min-height: 100px;
-  padding: 4px 5px 5px;
+  min-height: 110px;
+  padding: 6px 5px;
   cursor: pointer;
-  position: relative;
-  transition: background 0.15s;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  transition: background 0.12s;
+  overflow: hidden;
+  position: relative;
 }
 
-.day-cell:hover {
-  background: rgba(227, 255, 4, 0.04);
-}
+/* Remove right border from last column */
+.day-cell:nth-child(7n) { border-right: none; }
 
-.day-cell.outside-month {
-  opacity: 0.3;
-}
+/* Remove bottom border from last row cells — Vue can't do nth-last-row easily,
+   so we use the grid border on the container */
+.day-cell:hover { background: var(--color-primary)07; }
 
+.day-cell.outside-month { opacity: 0.28; }
+
+.day-cell.is-today { background: var(--color-primary)09; }
+
+/* Selected: use box-shadow inset — no layout impact */
 .day-cell.is-selected {
-  border: 2px solid var(--color-primary) !important;
-  /* compensate border so grid doesn't jump */
-  margin: -1px;
-  z-index: 1;
+  box-shadow: inset 0 0 0 2px var(--color-primary);
+  background: var(--color-primary)0d;
 }
 
-/* -------------------------------------------------------------------------
-   Day number
-------------------------------------------------------------------------- */
+/* ── Day number ────────────────────────────────────────────────────────────── */
 .day-num-wrap {
   display: flex;
   justify-content: flex-end;
-  padding-right: 2px;
 }
 
 .day-num {
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   color: var(--color-text-muted);
   line-height: 1;
-  padding: 2px 4px;
+  padding: 3px 5px;
   border-radius: 50%;
-  width: 22px;
-  height: 22px;
+  min-width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -528,82 +442,66 @@ const selectedDayLabel = computed<string>(() => {
   font-weight: 700;
 }
 
-/* -------------------------------------------------------------------------
-   Pills
-------------------------------------------------------------------------- */
+/* ── Pills ─────────────────────────────────────────────────────────────────── */
 .pills-wrap {
   display: flex;
   flex-direction: column;
   gap: 2px;
   overflow: hidden;
-}
-
-.pill {
-  font-size: 0.7rem;
-  padding: 2px 6px;
-  border-radius: 3px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  line-height: 1.3;
-}
-
-.pill-icon {
-  flex-shrink: 0;
-  font-size: 0.65rem;
-}
-
-.pill-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pill-overflow {
-  background: var(--color-bg-lighter) !important;
-  border-left: 3px solid var(--color-border) !important;
-  color: var(--color-text-muted) !important;
-}
-
-/* -------------------------------------------------------------------------
-   Day sidebar
-------------------------------------------------------------------------- */
-.day-sidebar {
-  width: 280px;
-  flex-shrink: 0;
-  background: var(--color-bg-lighter);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 1rem;
-  animation: slideIn 0.18s ease;
-}
-
-@keyframes slideIn {
-  from { opacity: 0; transform: translateX(12px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-
-.sidebar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-  gap: 0.5rem;
-}
-
-.sidebar-title {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--color-text-light);
   flex: 1;
 }
 
+.pill {
+  font-size: 0.68rem;
+  padding: 2px 5px;
+  border-radius: 3px;
+  border-left: 3px solid;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+.pill-more {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  padding: 0 2px;
+  background: none !important;
+  border-left: none !important;
+}
+
+/* ── Day panel (appears below calendar on click) ───────────────────────────── */
+.day-panel {
+  margin-top: 1rem;
+  background: var(--color-bg-lighter);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.day-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-card);
+}
+
+.day-panel-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-light);
+}
+
 .close-btn {
-  background: transparent;
+  background: none;
   border: none;
   color: var(--color-text-muted);
   cursor: pointer;
@@ -619,131 +517,115 @@ const selectedDayLabel = computed<string>(() => {
   color: var(--color-text-muted);
   font-size: 0.85rem;
   text-align: center;
-  padding: 1.5rem 0;
+  padding: 1.25rem;
 }
 
+/* ── Event list in day panel ───────────────────────────────────────────────── */
 .event-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
 }
 
 .event-item {
   display: flex;
-  gap: 0.6rem;
   align-items: flex-start;
-  background: var(--color-bg-card);
-  border-radius: 6px;
-  padding: 0.5rem 0.6rem 0.5rem 0.7rem;
-  /* border-left applied inline */
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border)55;
+  border-left: 4px solid transparent;
+  transition: background 0.1s;
 }
 
-.event-icon {
-  font-size: 1rem;
+.event-item:last-child { border-bottom: none; }
+.event-item:hover { background: rgba(255,255,255,0.03); }
+
+.event-type-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
   flex-shrink: 0;
-  margin-top: 1px;
+  margin-top: 5px;
 }
 
-.event-details {
-  flex: 1;
-  min-width: 0;
-}
+.event-details { flex: 1; min-width: 0; }
 
 .event-title {
-  font-size: 0.82rem;
-  color: var(--color-text-light);
+  font-size: 0.875rem;
   font-weight: 500;
-  word-break: break-word;
+  color: var(--color-text-light);
   line-height: 1.35;
+  word-break: break-word;
 }
 
 .event-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-top: 0.3rem;
+  gap: 5px;
+  margin-top: 5px;
 }
 
-.meta-tag {
+.ev-badge {
   font-size: 0.7rem;
-  background: var(--color-bg-lighter);
-  border-radius: 3px;
-  padding: 1px 5px;
+  padding: 2px 7px;
+  border-radius: 20px;
   font-weight: 500;
 }
 
-.meta-tag.muted {
+.ev-badge.muted {
+  background: var(--color-bg-lighter);
   color: var(--color-text-muted);
 }
 
-.type-label {
-  font-style: italic;
+/* ── Loading ───────────────────────────────────────────────────────────────── */
+.loading-msg {
+  text-align: center;
+  color: var(--color-text-muted);
+  padding: 3rem 0;
 }
 
-/* -------------------------------------------------------------------------
-   Mobile
-------------------------------------------------------------------------- */
+/* ── Mobile ────────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .calendario-view { padding: 1rem; }
 
-  .calendar-layout {
-    flex-direction: column;
-  }
-
-  .day-sidebar {
-    width: 100%;
-    box-sizing: border-box;
-  }
-
   .day-cell {
-    min-height: 60px;
-    padding: 3px 3px 3px;
+    min-height: 64px;
+    padding: 4px 3px;
   }
 
-  /* On mobile, pills collapse to colored dots only */
   .pill {
-    width: 10px;
-    height: 10px;
-    min-width: 10px;
-    padding: 0;
+    font-size: 0;        /* hide text */
+    width: 8px;
+    height: 8px;
+    min-height: 8px;
     border-radius: 50%;
-    border-left: none !important;
+    border-left: none;
+    padding: 0;
+    flex-shrink: 0;
     background-color: currentColor !important;
   }
 
-  .pill-text,
-  .pill-icon {
-    display: none;
+  .pill-more {
+    font-size: 0.6rem;
+    width: auto;
+    height: auto;
+    border-radius: 0;
+    background: none !important;
   }
 
   .pills-wrap {
     flex-direction: row;
     flex-wrap: wrap;
     gap: 3px;
-    padding-top: 2px;
+    align-items: center;
   }
 
-  .pill-overflow {
-    font-size: 0.6rem;
-    background: transparent !important;
-    color: var(--color-text-muted) !important;
-    width: auto;
-    height: auto;
-    border-radius: 0;
-    padding: 0;
-    display: block;
-    white-space: nowrap;
+  .dow-header {
+    font-size: 0.65rem;
+    padding: 6px 2px;
   }
 
-  .pill-overflow .pill-icon { display: none; }
+  .day-num { font-size: 0.72rem; min-width: 20px; height: 20px; }
 
   .legend { display: none; }
-
-  .month-label { font-size: 1rem; }
-
-  .nav-btn { padding: 0.35rem 0.6rem; font-size: 0.8rem; }
 }
 </style>
