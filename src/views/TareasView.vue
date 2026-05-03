@@ -53,7 +53,7 @@
             draggable="true"
             @dragstart="onDragStart(tarea.id)"
             @dragend="draggedId = null; dragOverColumn = null"
-            @click="openEditModal(tarea)"
+            @click="openPanel(tarea)"
           >
             <!-- Top row -->
             <div class="card-top-row">
@@ -65,10 +65,7 @@
                   borderColor: PRIORIDAD_COLOR[tarea.prioridad] + '55',
                 }"
               >{{ tarea.prioridad }}</span>
-              <div class="card-btns" @click.stop>
-                <button class="hours-btn" title="Registrar horas" @click.stop="openHorasModal(tarea)">⏱</button>
-                <button class="delete-btn" title="Eliminar tarea" @click.stop="confirmDelete(tarea)">×</button>
-              </div>
+              <button class="delete-btn" title="Eliminar tarea" @click.stop="confirmDelete(tarea)">×</button>
             </div>
 
             <!-- Title -->
@@ -107,12 +104,12 @@
       </div>
     </div>
 
-    <!-- Create / Edit Modal -->
+    <!-- Create Modal -->
     <Teleport to="body">
       <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
         <div class="modal">
           <div class="modal-header">
-            <h2 class="modal-title">{{ isEditing ? 'Editar Tarea' : 'Nueva Tarea' }}</h2>
+            <h2 class="modal-title">Nueva Tarea</h2>
             <button class="modal-close" @click="closeModal">×</button>
           </div>
           <form class="modal-form" @submit.prevent="submitForm">
@@ -167,95 +164,43 @@
             <div class="modal-actions">
               <button type="button" class="btn-secondary" @click="closeModal">Cancelar</button>
               <button type="submit" class="btn-primary" :disabled="saving">
-                {{ saving ? 'Guardando...' : (isEditing ? 'Guardar cambios' : 'Crear tarea') }}
+                {{ saving ? 'Guardando...' : 'Crear tarea' }}
               </button>
             </div>
           </form>
         </div>
       </div>
 
-      <!-- Hours Modal -->
-      <div v-if="showHorasModal && horasModalTarea" class="modal-overlay" @click.self="closeHorasModal">
-        <div class="modal modal-horas">
-          <div class="modal-header">
-            <div>
-              <h2 class="modal-title">Registro de horas</h2>
-              <p class="modal-subtitle">{{ horasModalTarea.titulo }}</p>
-            </div>
-            <button class="modal-close" @click="closeHorasModal">×</button>
-          </div>
-
-          <!-- Summary -->
-          <div class="horas-summary">
-            <div class="summary-card">
-              <span class="summary-label">Estimadas</span>
-              <span class="summary-value">{{ horasModalTarea.horas_estimadas ?? 0 }}h</span>
-            </div>
-            <div class="summary-card">
-              <span class="summary-label">Reales</span>
-              <span class="summary-value real">{{ horasTotalesModal }}h</span>
-            </div>
-            <div class="summary-card">
-              <span class="summary-label">Desviación</span>
-              <span class="summary-value" :class="desviacionClass">{{ desviacionModal }}</span>
-            </div>
-          </div>
-
-          <!-- Add entry form -->
-          <form class="horas-form" @submit.prevent="submitRegistroHoras">
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Fecha</label>
-                <input v-model="horasForm.fecha" type="date" class="form-input" required />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Horas</label>
-                <input v-model.number="horasForm.horas" type="number" class="form-input" min="0.25" step="0.25" placeholder="0" required />
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Descripción</label>
-              <input v-model="horasForm.descripcion" type="text" class="form-input" placeholder="Qué se hizo..." />
-            </div>
-            <button type="submit" class="btn-primary btn-sm" :disabled="savingHoras">
-              {{ savingHoras ? 'Guardando...' : '+ Añadir registro' }}
-            </button>
-          </form>
-
-          <!-- History -->
-          <div class="horas-list">
-            <div v-if="horasRegistros.length === 0" class="empty-horas">Sin registros aún</div>
-            <div v-for="r in horasRegistros" :key="r.id" class="horas-row">
-              <div class="horas-row-left">
-                <span class="horas-fecha">{{ formatDate(r.fecha) }}</span>
-                <span class="horas-desc">{{ r.descripcion || '—' }}</span>
-              </div>
-              <div class="horas-row-right">
-                <span class="horas-value">{{ r.horas }}h</span>
-                <button class="delete-btn small" @click="removeRegistroHoras(r.id)">×</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <!-- Task Detail Panel -->
+      <TaskDetailPanel
+        v-if="panelTarea"
+        :tarea="panelTarea"
+        :equipo="equipo"
+        :proyectos="proyectos"
+        :current-user-id="currentUserId"
+        :current-user-nombre="currentUserNombre"
+        @close="panelTarea = null"
+        @updated="onPanelUpdated"
+        @deleted="onPanelDeleted"
+      />
     </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useTareas, createTarea, updateTarea, deleteTarea, COLUMNAS, PRIORIDAD_COLOR } from '../services/tareas'
+import { useTareas, createTarea, deleteTarea, COLUMNAS, PRIORIDAD_COLOR, updateTarea } from '../services/tareas'
 import type { Tarea, TareaEstado, TareaPrioridad } from '../services/tareas'
-import { getRegistrosByTarea, createRegistroHoras, deleteRegistroHoras } from '../services/registros_horas'
-import type { RegistroHoras } from '../services/registros_horas'
 import { useToast } from '../composables/useToast'
 import { supabase } from '../supabase'
+import TaskDetailPanel from '../components/TaskDetailPanel.vue'
 
 const { tareas } = useTareas()
 const { success, error } = useToast()
 
 // ── Current user ──────────────────────────────────────────────────────────────
 const currentUserId = ref<string | null>(null)
+const currentUserNombre = ref('')
 
 // ── Filter ────────────────────────────────────────────────────────────────────
 const misTareasFilter = ref(false)
@@ -284,6 +229,11 @@ onMounted(async () => {
   equipo.value = (equipoRes.data ?? []) as UsuarioAdmin[]
   usuarioMap.value = new Map(equipo.value.map(u => [u.id, u.nombre]))
   proyectos.value = (proyectosRes.data ?? []) as Proyecto[]
+
+  // Nombre del usuario actual
+  if (currentUserId.value) {
+    currentUserNombre.value = usuarioMap.value.get(currentUserId.value) ?? 'Usuario'
+  }
 
   const map = new Map<string, number>()
   for (const r of (horasRes.data ?? []) as any[]) {
@@ -396,11 +346,32 @@ async function confirmDelete(tarea: Tarea) {
   }
 }
 
-// ── Create / Edit Modal ───────────────────────────────────────────────────────
+// ── Detail Panel ──────────────────────────────────────────────────────────────
+const panelTarea = ref<Tarea | null>(null)
+
+function openPanel(tarea: Tarea) {
+  panelTarea.value = tarea
+}
+
+function onPanelUpdated(updated: Tarea) {
+  const idx = tareas.value.findIndex(t => t.id === updated.id)
+  if (idx !== -1) {
+    // preserve joins from existing entry
+    tareas.value[idx] = { ...tareas.value[idx], ...updated }
+  }
+  panelTarea.value = tareas.value[idx] ?? updated
+  success('Tarea actualizada')
+}
+
+function onPanelDeleted(id: string) {
+  tareas.value = tareas.value.filter(t => t.id !== id)
+  panelTarea.value = null
+  success('Tarea eliminada')
+}
+
+// ── Create Modal ──────────────────────────────────────────────────────────────
 const showModal = ref(false)
-const isEditing = ref(false)
 const saving = ref(false)
-const editingId = ref<string | null>(null)
 
 interface FormState {
   titulo: string
@@ -427,145 +398,39 @@ const defaultForm = (): FormState => ({
 const form = ref<FormState>(defaultForm())
 
 function openCreateModal(columnKey: string) {
-  isEditing.value = false
-  editingId.value = null
   form.value = { ...defaultForm(), estado: columnKey as TareaEstado }
-  showModal.value = true
-}
-
-function openEditModal(tarea: Tarea) {
-  isEditing.value = true
-  editingId.value = tarea.id
-  form.value = {
-    titulo: tarea.titulo,
-    descripcion: tarea.descripcion ?? '',
-    estado: tarea.estado,
-    prioridad: tarea.prioridad,
-    proyecto_id: tarea.proyecto_id ?? null,
-    asignado_a: tarea.asignado_a ?? null,
-    horas_estimadas: tarea.horas_estimadas ?? 0,
-    fecha_limite: tarea.fecha_limite ? tarea.fecha_limite.slice(0, 10) : '',
-  }
   showModal.value = true
 }
 
 function closeModal() {
   showModal.value = false
   form.value = defaultForm()
-  editingId.value = null
-  isEditing.value = false
 }
 
 async function submitForm() {
   if (!form.value.titulo.trim()) return
   saving.value = true
   try {
-    const payload = {
-      titulo: form.value.titulo.trim(),
-      descripcion: form.value.descripcion.trim() || null,
-      estado: form.value.estado,
-      prioridad: form.value.prioridad,
-      proyecto_id: form.value.proyecto_id || null,
-      asignado_a: form.value.asignado_a || null,
+    const created = await createTarea({
+      titulo:          form.value.titulo.trim(),
+      descripcion:     form.value.descripcion.trim() || null,
+      estado:          form.value.estado,
+      prioridad:       form.value.prioridad,
+      proyecto_id:     form.value.proyecto_id || null,
+      asignado_a:      form.value.asignado_a || null,
       horas_estimadas: form.value.horas_estimadas || 0,
-      fecha_limite: form.value.fecha_limite || null,
-    }
-    if (isEditing.value && editingId.value) {
-      await updateTarea(editingId.value, payload)
-      success('Tarea actualizada')
-    } else {
-      await createTarea(payload)
-      success('Tarea creada')
-    }
+      fecha_limite:    form.value.fecha_limite || null,
+    })
     await refresh()
     closeModal()
+    // Abrir el panel de la tarea recién creada
+    const nueva = tareas.value.find(t => t.id === created.id) ?? created
+    panelTarea.value = nueva
+    success('Tarea creada')
   } catch {
-    error('Error al guardar la tarea')
+    error('Error al crear la tarea')
   } finally {
     saving.value = false
-  }
-}
-
-// ── Hours Modal ───────────────────────────────────────────────────────────────
-const showHorasModal = ref(false)
-const horasModalTarea = ref<Tarea | null>(null)
-const horasRegistros = ref<RegistroHoras[]>([])
-const savingHoras = ref(false)
-
-const horasForm = ref({ fecha: '', horas: 0, descripcion: '' })
-
-const horasTotalesModal = computed(() =>
-  horasRegistros.value.reduce((s, r) => s + Number(r.horas), 0)
-)
-
-const desviacionModal = computed(() => {
-  const est = Number(horasModalTarea.value?.horas_estimadas ?? 0)
-  const real = horasTotalesModal.value
-  if (!est && !real) return '—'
-  const diff = real - est
-  return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}h`
-})
-
-const desviacionClass = computed(() => {
-  const est = Number(horasModalTarea.value?.horas_estimadas ?? 0)
-  const real = horasTotalesModal.value
-  if (!est && !real) return ''
-  return real > est ? 'over' : 'under'
-})
-
-async function openHorasModal(tarea: Tarea) {
-  horasModalTarea.value = tarea
-  horasForm.value = { fecha: new Date().toISOString().split('T')[0] ?? '', horas: 0, descripcion: '' }
-  horasRegistros.value = await getRegistrosByTarea(tarea.id)
-  showHorasModal.value = true
-}
-
-function closeHorasModal() {
-  showHorasModal.value = false
-  horasModalTarea.value = null
-  horasRegistros.value = []
-}
-
-async function submitRegistroHoras() {
-  if (!horasModalTarea.value || !horasForm.value.horas) return
-  savingHoras.value = true
-  try {
-    const { data: { user } } = await supabase.auth.getUser()
-    await createRegistroHoras({
-      tarea_id: horasModalTarea.value.id,
-      proyecto_id: horasModalTarea.value.proyecto_id ?? null,
-      usuario_id: user!.id,
-      fecha: horasForm.value.fecha,
-      horas: horasForm.value.horas,
-      descripcion: horasForm.value.descripcion,
-    })
-    horasRegistros.value = await getRegistrosByTarea(horasModalTarea.value.id)
-    horasForm.value = { fecha: new Date().toISOString().split('T')[0] ?? '', horas: 0, descripcion: '' }
-    const tareaId = horasModalTarea.value.id
-    const total = horasRegistros.value.reduce((s, r) => s + Number(r.horas), 0)
-    horasRealesMap.value = new Map(horasRealesMap.value).set(tareaId, total)
-    success('Horas registradas')
-  } catch {
-    error('Error al registrar horas')
-  } finally {
-    savingHoras.value = false
-  }
-}
-
-async function removeRegistroHoras(id: string) {
-  if (!horasModalTarea.value) return
-  try {
-    await deleteRegistroHoras(id)
-    horasRegistros.value = await getRegistrosByTarea(horasModalTarea.value.id)
-    const tareaId = horasModalTarea.value.id
-    const total = horasRegistros.value.reduce((s, r) => s + Number(r.horas), 0)
-    const newMap = new Map(horasRealesMap.value)
-    if (total === 0) newMap.delete(tareaId)
-    else newMap.set(tareaId, total)
-    horasRealesMap.value = newMap
-    success('Registro eliminado')
-  } catch {
-    error('Error al eliminar registro')
   }
 }
 </script>
@@ -766,29 +631,6 @@ async function removeRegistroHoras(id: string) {
   letter-spacing: 0.03em;
 }
 
-.card-btns {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.hours-btn {
-  background: none;
-  border: none;
-  font-size: 0.9rem;
-  cursor: pointer;
-  padding: 1px 4px;
-  border-radius: 4px;
-  color: var(--color-text-muted);
-  transition: color 0.15s, background 0.15s;
-  line-height: 1;
-}
-
-.hours-btn:hover {
-  color: #60a5fa;
-  background: #3b82f622;
-}
-
 .delete-btn {
   background: none;
   border: none;
@@ -805,8 +647,6 @@ async function removeRegistroHoras(id: string) {
   color: #f87171;
   background: #f8717122;
 }
-
-.delete-btn.small { font-size: 0.95rem; }
 
 .card-title {
   font-size: 0.875rem;
@@ -918,7 +758,6 @@ async function removeRegistroHoras(id: string) {
 
 .btn-primary:hover:not(:disabled) { opacity: 0.88; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-primary.btn-sm { padding: 7px 14px; font-size: 0.82rem; }
 
 .btn-secondary {
   background: var(--color-bg-lighter);
@@ -942,7 +781,7 @@ async function removeRegistroHoras(id: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 900;
   padding: 16px;
 }
 
@@ -958,11 +797,9 @@ async function removeRegistroHoras(id: string) {
   flex-direction: column;
 }
 
-.modal-horas { max-width: 560px; }
-
 .modal-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   padding: 20px 24px 16px;
   border-bottom: 1px solid var(--color-border);
@@ -972,12 +809,6 @@ async function removeRegistroHoras(id: string) {
   font-size: 1.1rem;
   font-weight: 700;
   margin: 0;
-}
-
-.modal-subtitle {
-  font-size: 0.82rem;
-  color: var(--color-text-muted);
-  margin: 4px 0 0;
 }
 
 .modal-close {
@@ -990,12 +821,10 @@ async function removeRegistroHoras(id: string) {
   line-height: 1;
   border-radius: 4px;
   transition: color 0.15s;
-  flex-shrink: 0;
 }
 
 .modal-close:hover { color: var(--color-text-light); }
 
-/* ── Modal Form ────────────────────────────────────────────────────────────── */
 .modal-form {
   padding: 20px 24px 24px;
   display: flex;
@@ -1061,110 +890,6 @@ async function removeRegistroHoras(id: string) {
   margin-top: 4px;
   padding-top: 16px;
   border-top: 1px solid var(--color-border);
-}
-
-/* ── Hours Modal Content ───────────────────────────────────────────────────── */
-.horas-summary {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1px;
-  background: var(--color-border);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.summary-card {
-  background: var(--color-bg-card);
-  padding: 14px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.summary-label {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.summary-value {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--color-text-light);
-}
-
-.summary-value.real  { color: #34d399; }
-.summary-value.over  { color: #f87171; }
-.summary-value.under { color: #34d399; }
-
-.horas-form {
-  padding: 16px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.horas-list {
-  padding: 8px 0 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.empty-horas {
-  text-align: center;
-  color: var(--color-text-muted);
-  font-size: 0.82rem;
-  padding: 20px;
-  opacity: 0.6;
-}
-
-.horas-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 24px;
-  border-bottom: 1px solid var(--color-border)66;
-  transition: background 0.1s;
-}
-
-.horas-row:hover { background: var(--color-bg-lighter)44; }
-
-.horas-row-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.horas-fecha {
-  font-size: 0.78rem;
-  color: var(--color-text-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.horas-desc {
-  font-size: 0.82rem;
-  color: var(--color-text-light);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.horas-row-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.horas-value {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #34d399;
 }
 
 /* ── Responsive ────────────────────────────────────────────────────────────── */
