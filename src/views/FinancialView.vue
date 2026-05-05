@@ -187,6 +187,15 @@ const facturaForm = ref<Partial<Factura>>(emptyFactura());
 const openNewFactura = () => {
   facturaForm.value = emptyFactura(); editingFacturaId.value = null; showFacturaModal.value = true;
 };
+const openNewFacturaForProject = (p: ProyectoRentabilidad) => {
+  facturaForm.value = {
+    ...emptyFactura(),
+    cliente_id: p.cliente_id ?? '',
+    proyecto_id: p.id,
+  };
+  editingFacturaId.value = null;
+  showFacturaModal.value = true;
+};
 const openEditFactura = (f: Factura) => {
   facturaForm.value = { ...f }; editingFacturaId.value = f.id; showFacturaModal.value = true;
 };
@@ -360,11 +369,28 @@ const rentabilidadClientes = computed(() => {
     coste: number;
   }>();
 
+  // Build project→client lookup so invoices without cliente_id are resolved via proyecto_id
+  const proyectoClienteMap = new Map<string, string>();
+  const proyectoClienteNombre = new Map<string, string>();
+  for (const p of proyectos.value) {
+    if (p.id && p.cliente_id) {
+      proyectoClienteMap.set(p.id, p.cliente_id);
+      if (p.clientes?.nombre) proyectoClienteNombre.set(p.id, p.clientes.nombre);
+    }
+  }
+
   for (const f of facturas.value) {
-    if (!f.cliente_id) continue;
-    const nombre = f.clientes?.nombre ?? f.cliente_id;
-    if (!map.has(f.cliente_id)) map.set(f.cliente_id, { nombre, facturado: 0, cobrado: 0, coste: 0 });
-    const entry = map.get(f.cliente_id)!;
+    // Use direct cliente_id; fall back to the linked project's cliente_id
+    const clienteId = f.cliente_id
+      ?? (f.proyecto_id ? (proyectoClienteMap.get(f.proyecto_id) ?? null) : null);
+    if (!clienteId) continue;
+
+    const nombre = f.clientes?.nombre
+      ?? (f.proyecto_id ? proyectoClienteNombre.get(f.proyecto_id) : undefined)
+      ?? clienteId;
+
+    if (!map.has(clienteId)) map.set(clienteId, { nombre, facturado: 0, cobrado: 0, coste: 0 });
+    const entry = map.get(clienteId)!;
     entry.facturado += f.importe;
     if (f.estado === 'Pagada') entry.cobrado += f.importe;
   }
@@ -521,15 +547,20 @@ const rentabilidadClientes = computed(() => {
                     <div
                       class="progress-bar-fill"
                       :style="{ width: pctFacturado(p) + '%' }"
-                      :class="{ complete: pctFacturado(p) >= 100 }"
+                      :class="{
+                        complete: pctFacturado(p) >= 100 && totalCobradoProyecto(p.facturas) >= totalFacturadoProyecto(p.facturas),
+                        partial: pctFacturado(p) >= 100 && totalCobradoProyecto(p.facturas) < totalFacturadoProyecto(p.facturas),
+                      }"
                     ></div>
                   </div>
                   <span class="progress-text">
                     Facturado: <strong>{{ formatEur(totalFacturadoProyecto(p.facturas)) }}</strong>
                     de {{ formatEur(p.presupuesto) }}
-                    <span class="muted">(cobrado: {{ formatEur(totalCobradoProyecto(p.facturas)) }})</span>
                     <span v-if="p.presupuesto - totalFacturadoProyecto(p.facturas) > 0" class="por-facturar">
-                      · Queda por facturar: {{ formatEur(p.presupuesto - totalFacturadoProyecto(p.facturas)) }}
+                      · Por facturar: {{ formatEur(p.presupuesto - totalFacturadoProyecto(p.facturas)) }}
+                    </span>
+                    <span v-if="totalFacturadoProyecto(p.facturas) - totalCobradoProyecto(p.facturas) > 0" class="por-cobrar">
+                      · Por cobrar: {{ formatEur(totalFacturadoProyecto(p.facturas) - totalCobradoProyecto(p.facturas)) }}
                     </span>
                   </span>
                 </div>
@@ -548,13 +579,11 @@ const rentabilidadClientes = computed(() => {
 
             <!-- Facturas + Gastos del proyecto (expandible) -->
             <div v-if="expandedProjectId === p.id" class="pb-facturas">
-
-              <!-- Facturas -->
-              <p class="pb-section-label">Facturas</p>
-              <div v-if="p.facturas.length === 0" class="empty-state-inline">
-                Sin facturas vinculadas.
-                <button class="btn-link" @click="openNewFactura">Añadir manualmente</button>
+              <div class="pb-facturas-header">
+                <p class="pb-section-label">Facturas</p>
+                <button class="btn-add-factura" @click.stop="openNewFacturaForProject(p)">+ Añadir Factura</button>
               </div>
+              <div v-if="p.facturas.length === 0" class="empty-state-inline">Sin facturas vinculadas.</div>
               <div v-else class="facturas-grid">
                 <div v-for="f in p.facturas" :key="f.id" class="factura-card" :class="f.estado.toLowerCase()">
                   <div class="factura-card-header">
@@ -909,9 +938,11 @@ const rentabilidadClientes = computed(() => {
 .progress-bar-bg { width: 100%; max-width: 400px; height: 6px; background: #333; border-radius: 3px; overflow: hidden; }
 .progress-bar-fill { height: 100%; background: var(--color-primary); border-radius: 3px; transition: width 0.4s; }
 .progress-bar-fill.complete { background: #4ade80; }
+.progress-bar-fill.partial { background: #ffa500; }
 .progress-text { font-size: 0.82rem; color: var(--color-text-muted); }
 .progress-text strong { color: var(--color-text-light); }
 .por-facturar { color: #ffa500; }
+.por-cobrar { color: #60a5fa; font-weight: 600; }
 
 .pb-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem; flex-shrink: 0; }
 .pb-actions { display: flex; gap: 0.4rem; }
@@ -920,7 +951,11 @@ const rentabilidadClientes = computed(() => {
 .badge.low { background: rgba(255,68,68,0.2); color: #ff4444; }
 
 /* Facturas del proyecto */
-.pb-facturas { padding: 1rem 1.25rem; border-top: 1px solid var(--color-border); background: rgba(0,0,0,0.15); }
+.pb-facturas { padding: 1rem 1.25rem; border-top: 1px solid var(--color-border); background: rgba(0,0,0,0.15); display: flex; flex-direction: column; gap: 0.75rem; }
+.pb-facturas-header { display: flex; align-items: center; justify-content: space-between; }
+.pb-section-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--color-text-muted); margin: 0; }
+.btn-add-factura { background: transparent; border: 1px dashed var(--color-border); color: var(--color-primary); padding: 0.25rem 0.7rem; border-radius: 6px; cursor: pointer; font-size: 0.82rem; transition: all 0.2s; }
+.btn-add-factura:hover { background: rgba(227,255,4,0.06); border-color: var(--color-primary); }
 .facturas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 0.75rem; }
 
 .factura-card { background: var(--color-bg-lighter); border-radius: 8px; padding: 1rem; border-left: 3px solid #555; display: flex; flex-direction: column; gap: 0.4rem; }
@@ -1033,7 +1068,7 @@ const rentabilidadClientes = computed(() => {
 .rent-table { display: flex; flex-direction: column; gap: 0; }
 .rent-header {
   display: grid;
-  grid-template-columns: 1fr repeat(5, 110px);
+  grid-template-columns: 1fr repeat(6, 100px);
   gap: 0.5rem;
   padding: 0.4rem 0.5rem;
   font-size: 0.75rem;
@@ -1045,7 +1080,7 @@ const rentabilidadClientes = computed(() => {
 }
 .rent-row {
   display: grid;
-  grid-template-columns: 1fr repeat(5, 110px);
+  grid-template-columns: 1fr repeat(6, 100px);
   gap: 0.5rem;
   padding: 0.65rem 0.5rem;
   font-size: 0.88rem;
