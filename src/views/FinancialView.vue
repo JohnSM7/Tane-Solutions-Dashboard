@@ -8,8 +8,9 @@ import {
   createProyectoRentabilidad, updateProyectoRentabilidad, deleteProyectoRentabilidad,
   createFacturasFromPlan, generateInvoicePDF,
   createGasto, deleteGasto,
-  PLANES_PAGO, TIPOS_IVA, CATEGORIAS_GASTO,
-  type Factura, type ProyectoRentabilidad, type Gasto,
+  fetchSuscripciones, createSuscripcion, updateSuscripcion, deleteSuscripcion, registrarPagoSuscripcion,
+  PLANES_PAGO, TIPOS_IVA, CATEGORIAS_GASTO, FRECUENCIA_LABELS,
+  type Factura, type ProyectoRentabilidad, type Gasto, type Suscripcion,
 } from '../services/financial';
 import { useClientsList } from '../services/clients';
 import { exportCsv } from '../utils/exportCsv';
@@ -17,6 +18,80 @@ import { supabase } from '../supabase';
 
 const { facturas, proyectos, gastos, proyectosConFacturas, kpis, monthlyBilling, loading } = useFinancialData();
 const { clients } = useClientsList();
+
+// ── Suscripciones ─────────────────────────────────────────────────────────────
+const suscripciones = ref<Suscripcion[]>([]);
+const loadingSusc = ref(true);
+fetchSuscripciones().then(d => { suscripciones.value = d; }).finally(() => { loadingSusc.value = false; });
+
+const showSuscModal = ref(false);
+const savingSusc = ref(false);
+const editingSuscId = ref<string | null>(null);
+const registrandoPago = ref<string | null>(null);
+
+const emptySusc = (): Partial<Suscripcion> => ({
+  concepto: '', cliente_id: null, proyecto_id: null,
+  importe: 0, tipo_iva: 21, frecuencia: 'mensual',
+  fecha_inicio: new Date().toISOString().split('T')[0],
+  estado: 'activa', notas: '',
+});
+const suscForm = ref<Partial<Suscripcion>>(emptySusc());
+
+const openNewSusc = () => { suscForm.value = emptySusc(); editingSuscId.value = null; showSuscModal.value = true; };
+const openEditSusc = (s: Suscripcion) => { suscForm.value = { ...s }; editingSuscId.value = s.id; showSuscModal.value = true; };
+
+const saveSusc = async () => {
+  savingSusc.value = true;
+  try {
+    const payload = { ...suscForm.value };
+    if (!payload.cliente_id) payload.cliente_id = null;
+    if (!payload.proyecto_id) payload.proyecto_id = null;
+    if (!payload.notas) payload.notas = null;
+    if (editingSuscId.value) {
+      const updated = await updateSuscripcion(editingSuscId.value, payload);
+      const idx = suscripciones.value.findIndex(s => s.id === editingSuscId.value);
+      if (idx !== -1) suscripciones.value[idx] = updated;
+    } else {
+      const created = await createSuscripcion(payload);
+      suscripciones.value.unshift(created);
+    }
+    showSuscModal.value = false;
+  } catch (e: any) {
+    alert('Error al guardar: ' + (e?.message ?? ''));
+  } finally {
+    savingSusc.value = false;
+  }
+};
+
+const removeSusc = async (s: Suscripcion) => {
+  if (!confirm(`¿Eliminar suscripción "${s.concepto}"?`)) return;
+  await deleteSuscripcion(s.id);
+  suscripciones.value = suscripciones.value.filter(x => x.id !== s.id);
+};
+
+const registrarPago = async (s: Suscripcion) => {
+  registrandoPago.value = s.id;
+  try {
+    const cl = clients.value.find(c => c.id === s.cliente_id);
+    const clienteData = cl ? { nombre: cl.name, cif: cl.cif, direccion_facturacion: cl.direccionFacturacion } : null;
+    const factura = await registrarPagoSuscripcion(s, clienteData ?? null);
+    facturas.value.unshift(factura);
+    const idx = suscripciones.value.findIndex(x => x.id === s.id);
+    if (idx !== -1) suscripciones.value[idx] = { ...suscripciones.value[idx]!, fecha_ultimo_pago: factura.fecha_emision };
+  } catch (e: any) {
+    alert('Error al registrar pago: ' + (e?.message ?? ''));
+  } finally {
+    registrandoPago.value = null;
+  }
+};
+
+const proximoPago = (s: Suscripcion): string => {
+  const base = s.fecha_ultimo_pago ?? s.fecha_inicio;
+  const d = new Date(base + 'T00:00:00');
+  const months = { mensual: 1, trimestral: 3, semestral: 6, anual: 12 };
+  d.setMonth(d.getMonth() + (months[s.frecuencia] ?? 1));
+  return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+};
 
 const exportFacturas = () => exportCsv('facturas.csv', facturas.value.map(f => ({
   Número: f.numero_factura ?? '',
@@ -27,11 +102,47 @@ const exportFacturas = () => exportCsv('facturas.csv', facturas.value.map(f => (
   'Fecha emisión': f.fecha_emision,
 })));
 
-// ── Proyectos: expansión ──────────────────────────────────────────────────────
+// ── Proyectos: filtro y expansión ─────────────────────────────────────────────
 const expandedProjectId = ref<string | null>(null);
 const toggleExpand = (id: string) => {
   expandedProjectId.value = expandedProjectId.value === id ? null : id;
 };
+
+const filtroProyectoCliente = ref('');
+const filtroProyectoFechaDesde = ref('');
+const filtroProyectoFechaHasta = ref('');
+
+const proyectosFiltrados = computed(() => {
+  const now = new Date();
+  const mesActual = now.getMonth();
+  const anioActual = now.getFullYear();
+
+  return proyectosConFacturas.value.filter(p => {
+    // Filtro de búsqueda por nombre/cliente
+    if (filtroProyectoCliente.value) {
+      const q = filtroProyectoCliente.value.toLowerCase();
+      const matchNombre = p.nombre.toLowerCase().includes(q);
+      const matchCliente = (p.clientes?.nombre ?? '').toLowerCase().includes(q);
+      if (!matchNombre && !matchCliente) return false;
+    }
+
+    // Filtro por rango de fechas manual
+    if (filtroProyectoFechaDesde.value && p.fecha_inicio < filtroProyectoFechaDesde.value) return false;
+    if (filtroProyectoFechaHasta.value && p.fecha_inicio > filtroProyectoFechaHasta.value) return false;
+
+    // Sin filtros manuales: mostrar solo proyectos del mes actual o con facturas pendientes
+    if (!filtroProyectoCliente.value && !filtroProyectoFechaDesde.value && !filtroProyectoFechaHasta.value) {
+      const esMesActual = (() => {
+        const d = new Date(p.fecha_inicio + 'T00:00:00');
+        return d.getMonth() === mesActual && d.getFullYear() === anioActual;
+      })();
+      const tienePendiente = p.facturas.some(f => f.estado !== 'Pagada');
+      return esMesActual || tienePendiente;
+    }
+
+    return true;
+  });
+});
 
 const margen = (p: ProyectoRentabilidad) =>
   p.presupuesto > 0 ? Math.round((p.presupuesto - p.coste) / p.presupuesto * 100) : 0;
@@ -527,12 +638,27 @@ const rentabilidadClientes = computed(() => {
           <button class="btn-action" @click="openNewPr">+ Nuevo Proyecto</button>
         </template>
 
-        <div v-if="proyectosConFacturas.length === 0" class="empty-state">
-          Sin proyectos. Añade el primero para generar facturas automáticamente.
+        <!-- Filtros -->
+        <div class="proyectos-filtros">
+          <input v-model="filtroProyectoCliente" class="form-input-sm" placeholder="Buscar por proyecto o cliente..." style="flex:2; min-width:160px;" />
+          <input v-model="filtroProyectoFechaDesde" type="date" class="form-input-sm" title="Fecha inicio desde" />
+          <input v-model="filtroProyectoFechaHasta" type="date" class="form-input-sm" title="Fecha inicio hasta" />
+          <button v-if="filtroProyectoCliente || filtroProyectoFechaDesde || filtroProyectoFechaHasta"
+            class="btn-action" @click="filtroProyectoCliente = ''; filtroProyectoFechaDesde = ''; filtroProyectoFechaHasta = ''">
+            ✕ Limpiar
+          </button>
+        </div>
+        <p v-if="!filtroProyectoCliente && !filtroProyectoFechaDesde && !filtroProyectoFechaHasta" class="filtro-hint muted">
+          Mostrando proyectos del mes actual y con pagos pendientes. Usa el buscador para ver todos.
+        </p>
+
+        <div v-if="proyectosFiltrados.length === 0" class="empty-state">
+          <span v-if="proyectosConFacturas.length === 0">Sin proyectos. Añade el primero para generar facturas automáticamente.</span>
+          <span v-else>Sin proyectos para los filtros seleccionados.</span>
         </div>
 
         <div v-else class="projects-billing-list">
-          <div v-for="p in proyectosConFacturas" :key="p.id" class="project-billing-row">
+          <div v-for="p in proyectosFiltrados" :key="p.id" class="project-billing-row">
 
             <!-- Cabecera del proyecto -->
             <div class="pb-header" @click="toggleExpand(p.id)">
@@ -677,6 +803,46 @@ const rentabilidadClientes = computed(() => {
 
             </div>
 
+          </div>
+        </div>
+      </DashboardCard>
+
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <!-- SUSCRIPCIONES / MANTENIMIENTOS                                      -->
+      <!-- ═══════════════════════════════════════════════════════════════════ -->
+      <DashboardCard title="Suscripciones y Mantenimientos">
+        <template #actions>
+          <button class="btn-action" @click="openNewSusc">+ Nueva</button>
+        </template>
+        <div v-if="loadingSusc" class="empty-state">Cargando...</div>
+        <div v-else-if="suscripciones.length === 0" class="empty-state">
+          Sin suscripciones. Añade mantenimientos o pagos recurrentes.
+        </div>
+        <div v-else class="susc-list">
+          <div v-for="s in suscripciones" :key="s.id" class="susc-row" :class="s.estado">
+            <div class="susc-info">
+              <div class="susc-name-row">
+                <span class="susc-concepto">{{ s.concepto }}</span>
+                <span class="susc-badge">{{ FRECUENCIA_LABELS[s.frecuencia] }}</span>
+                <span class="susc-estado-pill" :class="s.estado">{{ s.estado }}</span>
+              </div>
+              <div class="susc-meta">
+                <span class="muted">{{ s.clientes?.nombre ?? '—' }}</span>
+                <span v-if="s.fecha_ultimo_pago" class="muted">· Último pago: {{ formatDate(s.fecha_ultimo_pago) }}</span>
+                <span v-if="s.estado === 'activa'" class="susc-proximo">· Próximo: {{ proximoPago(s) }}</span>
+              </div>
+            </div>
+            <div class="susc-right">
+              <span class="susc-importe">{{ formatEur(s.importe) }}</span>
+              <button
+                v-if="s.estado === 'activa'"
+                class="btn-pago"
+                @click="registrarPago(s)"
+                :disabled="registrandoPago === s.id"
+              >{{ registrandoPago === s.id ? '...' : '✓ Registrar pago' }}</button>
+              <button class="btn-icon-text" @click="openEditSusc(s)" title="Editar">✏️</button>
+              <button class="btn-icon-text danger" @click="removeSusc(s)" title="Eliminar">🗑️</button>
+            </div>
           </div>
         </div>
       </DashboardCard>
@@ -878,6 +1044,78 @@ const rentabilidadClientes = computed(() => {
       </div>
     </div>
 
+    <!-- ── Modal: Nueva / Editar Suscripción ────────────────────────────────── -->
+    <div class="modal-overlay" v-if="showSuscModal">
+      <div class="modal-box">
+        <p class="modal-title">{{ editingSuscId ? 'Editar Suscripción' : 'Nueva Suscripción' }}</p>
+        <div class="form-group">
+          <label>Concepto *</label>
+          <input v-model="suscForm.concepto" class="form-input" placeholder="Ej: Mantenimiento web mensual" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Cliente</label>
+            <select v-model="suscForm.cliente_id" class="form-input">
+              <option :value="null">— Sin cliente —</option>
+              <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Proyecto (opcional)</label>
+            <select v-model="suscForm.proyecto_id" class="form-input">
+              <option :value="null">— Sin proyecto —</option>
+              <option v-for="p in proyectos.filter(p => !suscForm.cliente_id || p.cliente_id === suscForm.cliente_id)" :key="p.id" :value="p.id">{{ p.nombre }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Importe (€)</label>
+            <input v-model.number="suscForm.importe" type="number" min="0" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label>IVA</label>
+            <select v-model.number="suscForm.tipo_iva" class="form-input">
+              <option v-for="t in TIPOS_IVA" :key="t" :value="t">{{ t }}%</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Frecuencia</label>
+            <select v-model="suscForm.frecuencia" class="form-input">
+              <option value="mensual">Mensual</option>
+              <option value="trimestral">Trimestral</option>
+              <option value="semestral">Semestral</option>
+              <option value="anual">Anual</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Estado</label>
+            <select v-model="suscForm.estado" class="form-input">
+              <option value="activa">Activa</option>
+              <option value="pausada">Pausada</option>
+              <option value="cancelada">Cancelada</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Fecha inicio</label>
+          <input v-model="suscForm.fecha_inicio" type="date" class="form-input" />
+        </div>
+        <div class="form-group">
+          <label>Notas</label>
+          <textarea v-model="suscForm.notas" class="form-input" rows="2" placeholder="Observaciones, accesos, etc."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-text" @click="showSuscModal = false">Cancelar</button>
+          <button class="btn-primary" @click="saveSusc" :disabled="savingSusc || !suscForm.concepto">
+            {{ savingSusc ? 'Guardando...' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -886,6 +1124,32 @@ const rentabilidadClientes = computed(() => {
 .header h1 { font-size: 2rem; margin-bottom: 0.5rem; }
 .subtitle { color: var(--color-text-muted); font-size: 1.1rem; }
 .loading-state { color: var(--color-text-muted); font-style: italic; padding: 2rem 0; }
+
+/* ── Filtro proyectos ───────────────────────────────────────────────────────── */
+.proyectos-filtros { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.filtro-hint { font-size: 0.78rem; margin-bottom: 0.75rem; }
+
+/* ── Suscripciones ──────────────────────────────────────────────────────────── */
+.susc-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.susc-row { display: flex; align-items: center; gap: 1rem; padding: 0.85rem 1rem; border-radius: 8px; border: 1px solid var(--color-border); background: rgba(255,255,255,0.02); transition: background 0.15s; }
+.susc-row:hover { background: rgba(255,255,255,0.04); }
+.susc-row.pausada { opacity: 0.6; }
+.susc-row.cancelada { opacity: 0.4; }
+.susc-info { flex: 1; display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.susc-name-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.susc-concepto { font-weight: 600; font-size: 0.95rem; }
+.susc-badge { font-size: 0.72rem; font-weight: 700; padding: 0.1rem 0.45rem; border-radius: 8px; background: rgba(227,255,4,0.1); color: var(--color-primary); border: 1px solid rgba(227,255,4,0.25); }
+.susc-estado-pill { font-size: 0.72rem; font-weight: 700; padding: 0.1rem 0.45rem; border-radius: 8px; text-transform: capitalize; }
+.susc-estado-pill.activa { background: rgba(74,222,128,0.12); color: #4ade80; }
+.susc-estado-pill.pausada { background: rgba(255,165,0,0.12); color: #ffa500; }
+.susc-estado-pill.cancelada { background: rgba(255,68,68,0.12); color: #f87171; }
+.susc-meta { font-size: 0.82rem; color: var(--color-text-muted); display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.susc-proximo { color: #60a5fa; }
+.susc-right { display: flex; align-items: center; gap: 0.6rem; flex-shrink: 0; }
+.susc-importe { font-size: 1.1rem; font-weight: 700; white-space: nowrap; }
+.btn-pago { background: var(--color-primary); color: #000; font-weight: 700; padding: 0.35rem 0.8rem; border-radius: 6px; border: none; cursor: pointer; font-size: 0.82rem; white-space: nowrap; }
+.btn-pago:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-pago:hover:not(:disabled) { opacity: 0.85; }
 
 .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 1.5rem; }
 .kpi-item { display: flex; flex-direction: column; }

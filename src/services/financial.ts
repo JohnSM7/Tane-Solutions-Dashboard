@@ -47,6 +47,28 @@ export type Gasto = {
   created_at: string;
 };
 
+export type Suscripcion = {
+  id: string;
+  cliente_id: string | null;
+  proyecto_id: string | null;
+  concepto: string;
+  importe: number;
+  tipo_iva: number;
+  frecuencia: 'mensual' | 'trimestral' | 'semestral' | 'anual';
+  fecha_inicio: string;
+  fecha_ultimo_pago: string | null;
+  estado: 'activa' | 'pausada' | 'cancelada';
+  notas: string | null;
+  clientes?: { nombre: string };
+};
+
+export const FRECUENCIA_LABELS: Record<string, string> = {
+  mensual: 'Mensual',
+  trimestral: 'Trimestral',
+  semestral: 'Semestral',
+  anual: 'Anual',
+};
+
 export const CATEGORIAS_GASTO = [
   'Herramienta / Software',
   'Subcontrata',
@@ -634,4 +656,76 @@ export async function updateGasto(id: string, updates: Partial<Omit<Gasto, 'id' 
 export async function deleteGasto(id: string): Promise<void> {
   const { error } = await supabase.from('gastos').delete().eq('id', id);
   if (error) throw error;
+}
+
+// ── CRUD Suscripciones ────────────────────────────────────────────────────────
+
+export async function fetchSuscripciones(): Promise<Suscripcion[]> {
+  const { data, error } = await supabase
+    .from('suscripciones')
+    .select('*, clientes(nombre)')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as Suscripcion[];
+}
+
+export async function createSuscripcion(form: Partial<Suscripcion>): Promise<Suscripcion> {
+  const { clientes, ...clean } = form as any;
+  const { data, error } = await supabase
+    .from('suscripciones')
+    .insert(clean)
+    .select('*, clientes(nombre)')
+    .single();
+  if (error) throw error;
+  return data as Suscripcion;
+}
+
+export async function updateSuscripcion(id: string, updates: Partial<Suscripcion>): Promise<Suscripcion> {
+  const { clientes, ...clean } = updates as any;
+  const { data, error } = await supabase
+    .from('suscripciones')
+    .update(clean)
+    .eq('id', id)
+    .select('*, clientes(nombre)')
+    .single();
+  if (error) throw error;
+  return data as Suscripcion;
+}
+
+export async function deleteSuscripcion(id: string): Promise<void> {
+  const { error } = await supabase.from('suscripciones').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function registrarPagoSuscripcion(
+  suscripcion: Suscripcion,
+  clienteData: { nombre: string; cif?: string; direccion_facturacion?: string } | null,
+): Promise<Factura> {
+  const hoy = new Date().toISOString().split('T')[0];
+  const numero = await nextInvoiceNumber();
+  const { data, error } = await supabase
+    .from('facturas')
+    .insert({
+      cliente_id: suscripcion.cliente_id,
+      proyecto_id: suscripcion.proyecto_id,
+      suscripcion_id: suscripcion.id,
+      numero_factura: numero,
+      concepto: suscripcion.concepto,
+      importe: suscripcion.importe,
+      tipo_iva: suscripcion.tipo_iva,
+      estado: 'Pagada',
+      pago_numero: 1,
+      pago_total: 1,
+      fecha_emision: hoy,
+      fecha_pago: hoy,
+    })
+    .select('*')
+    .single();
+  if (error) throw error;
+  // Actualizar fecha_ultimo_pago en la suscripción
+  await supabase.from('suscripciones').update({ fecha_ultimo_pago: hoy }).eq('id', suscripcion.id);
+  return {
+    ...(data as Factura),
+    clientes: clienteData ?? undefined,
+  };
 }
