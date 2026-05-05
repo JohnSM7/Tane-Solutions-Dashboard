@@ -6,11 +6,12 @@ import {
   PIPELINE_STAGES, ESTADO_COLORS, type Lead,
 } from '../services/commercial';
 import { createProyectoRentabilidad, createFacturasFromPlan } from '../services/financial';
-import { createClient } from '../services/clients';
+import { createClient, useClientsList } from '../services/clients';
 import { exportCsv } from '../utils/exportCsv';
 import { supabase } from '../supabase';
 
 const { leads, kpis, pipeline, topServices, loading } = useCommercialData();
+const { clients } = useClientsList();
 
 const exportLeads = () => exportCsv('leads.csv', leads.value.map(l => ({
   Empresa: l.empresa, Nombre: l.nombre, Email: l.email ?? '',
@@ -394,11 +395,20 @@ const formatDate = (iso: string) =>
             <input v-model.number="form.cac" type="number" min="0" class="form-input" />
           </div>
         </div>
-        <div class="form-group">
-          <label>Estado</label>
-          <select v-model="form.estado" class="form-input">
-            <option v-for="s in [...PIPELINE_STAGES, 'Cerrado-Perdido']" :key="s" :value="s">{{ s }}</option>
-          </select>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Estado</label>
+            <select v-model="form.estado" class="form-input">
+              <option v-for="s in [...PIPELINE_STAGES, 'Cerrado-Perdido']" :key="s" :value="s">{{ s }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Cliente vinculado</label>
+            <select v-model="form.cliente_id" class="form-input">
+              <option :value="null">— Sin cliente —</option>
+              <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
+          </div>
         </div>
         <div class="form-group">
           <label>Notas</label>
