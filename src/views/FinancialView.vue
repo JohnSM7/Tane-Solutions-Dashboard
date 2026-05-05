@@ -137,7 +137,11 @@ const proyectosFiltrados = computed(() => {
         return d.getMonth() === mesActual && d.getFullYear() === anioActual;
       })();
       const tienePendiente = p.facturas.some(f => f.estado !== 'Pagada');
-      return esMesActual || tienePendiente;
+      const tieneActividadEsteMes = p.facturas.some(f => {
+        const d = new Date(f.fecha_emision + 'T00:00:00');
+        return d.getMonth() === mesActual && d.getFullYear() === anioActual;
+      });
+      return esMesActual || tienePendiente || tieneActividadEsteMes;
     }
 
     return true;
