@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import DashboardCard from '../components/DashboardCard.vue';
 import ClientReportGenerator from '../components/ClientReportGenerator.vue';
 import ClientReportModule from '../components/ClientReportModule.vue';
 import { useClientProfile, computeHealthScore, healthColor, healthLabel, type Sede } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
+import { ESTADO_COLORS as LEAD_ESTADO_COLORS } from '../services/commercial';
 import { listarInformes, eliminarInforme, type InformeGuardado } from '../services/reportes';
 import { useGmbHistorico, tomarSnapshot } from '../services/gmbHistorico';
 import GmbChart from '../components/GmbChart.vue';
@@ -13,14 +14,29 @@ import { generarInformeMensualPDF } from '../services/informeMensual';
 import { useToast } from '../composables/useToast';
 
 const route = useRoute();
+const router = useRouter();
 const clientId = route.params.id as string;
 const toast = useToast();
 const {
-  clientData, facturas, proyectos, sedes, documentos, usuarios,
+  clientData, facturas, proyectos, sedes, documentos, usuarios, leads,
   financials, loading,
   saveProfile, addSede, updateSede, deleteSede,
   uploadDocumento, deleteDocumento,
 } = useClientProfile(clientId);
+
+function goToCommercial() {
+  router.push('/commercial');
+}
+
+function formatLeadDate(d: string | null): string {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatLeadValue(v: number): string {
+  if (!v) return '—';
+  return `${Number(v).toLocaleString('es-ES')} €`;
+}
 
 // ── Filtro de sede ────────────────────────────────────────────────────────────
 const selectedSedeId = ref<number | 'all'>('all');
@@ -409,6 +425,33 @@ const formatDate = (iso: string) =>
                 <span class="status-pill" :style="{ color: ESTADO_COLORS[p.estado], borderColor: ESTADO_COLORS[p.estado] }">
                   {{ p.estado }}
                 </span>
+              </li>
+            </ul>
+          </DashboardCard>
+
+          <!-- Leads del cliente -->
+          <DashboardCard title="Leads Comerciales" v-if="selectedSedeId === 'all'">
+            <template #actions>
+              <button class="btn-sm btn-outline" @click="goToCommercial">Ver en Comercial</button>
+            </template>
+            <div v-if="leads.length === 0" class="empty-state">Sin leads asociados</div>
+            <ul v-else class="leads-list">
+              <li v-for="l in leads" :key="l.id" class="lead-row" @click="goToCommercial">
+                <div class="lead-dot" :style="{ backgroundColor: LEAD_ESTADO_COLORS[l.estado] }"></div>
+                <div class="lead-info">
+                  <strong class="lead-name">{{ l.nombre }}<span v-if="l.empresa" class="lead-empresa"> · {{ l.empresa }}</span></strong>
+                  <div class="lead-meta">
+                    <span v-if="l.servicio">{{ l.servicio }}</span>
+                    <span v-if="l.fuente"> · {{ l.fuente }}</span>
+                    <span> · {{ formatLeadDate(l.fecha_creacion) }}</span>
+                  </div>
+                </div>
+                <div class="lead-right">
+                  <span v-if="l.valor_estimado" class="lead-value">{{ formatLeadValue(l.valor_estimado) }}</span>
+                  <span class="status-pill" :style="{ color: LEAD_ESTADO_COLORS[l.estado], borderColor: LEAD_ESTADO_COLORS[l.estado] }">
+                    {{ l.estado }}
+                  </span>
+                </div>
               </li>
             </ul>
           </DashboardCard>
@@ -856,6 +899,18 @@ const formatDate = (iso: string) =>
 .act-text strong { font-size: 0.95rem; }
 .act-text span { font-size: 0.8rem; color: var(--color-text-muted); }
 .status-pill { font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 10px; border: 1px solid; flex-shrink: 0; }
+
+/* Leads */
+.leads-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; margin: 0; }
+.lead-row { display: flex; gap: 0.75rem; align-items: center; padding: 0.75rem; background: rgba(255,255,255,0.02); border-radius: 8px; cursor: pointer; transition: background 0.15s, border-color 0.15s; border: 1px solid transparent; }
+.lead-row:hover { background: rgba(227,255,4,0.04); border-color: var(--color-border); }
+.lead-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.lead-info { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 2px; }
+.lead-name { font-size: 0.92rem; font-weight: 600; color: var(--color-text-light); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lead-empresa { color: var(--color-text-muted); font-weight: 500; }
+.lead-meta { font-size: 0.75rem; color: var(--color-text-muted); display: flex; flex-wrap: wrap; }
+.lead-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.lead-value { font-size: 0.82rem; font-weight: 700; color: var(--color-text-light); white-space: nowrap; }
 
 /* Docs */
 .upload-area { border: 2px dashed var(--color-border); padding: 1.5rem; text-align: center; border-radius: 8px; margin-bottom: 1rem; cursor: pointer; transition: all 0.2s; }

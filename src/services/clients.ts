@@ -190,6 +190,7 @@ export function useClientProfile(clientId: string) {
   const sedes = ref<Sede[]>([]);
   const documentos = ref<Documento[]>([]);
   const usuarios = ref<UsuarioPerfil[]>([]);
+  const leads = ref<any[]>([]);
   const loading = ref(true);
 
   const financials = computed(() => {
@@ -211,7 +212,8 @@ export function useClientProfile(clientId: string) {
     supabase.from('sedes').select('*').eq('cliente_id', clientId).order('id'),
     supabase.from('documentos').select('*').eq('cliente_id', clientId).order('creado_en', { ascending: false }),
     supabase.from('usuarios').select('id, nombre, rol').eq('cliente_id', clientId),
-  ]).then(([clientRes, facturasRes, proyectosRes, sedesRes, docsRes, usersRes]) => {
+    supabase.from('leads').select('*').eq('cliente_id', clientId).order('fecha_creacion', { ascending: false }),
+  ]).then(([clientRes, facturasRes, proyectosRes, sedesRes, docsRes, usersRes, leadsRes]) => {
     if (clientRes.error) console.error('[useClientProfile] Error fetch cliente:', clientRes.error);
     clientData.value = clientRes.data ? mapCliente(clientRes.data as Cliente) : null;
     facturas.value = facturasRes.data ?? [];
@@ -219,6 +221,7 @@ export function useClientProfile(clientId: string) {
     sedes.value = (sedesRes.data ?? []) as Sede[];
     documentos.value = (docsRes.data ?? []) as Documento[];
     usuarios.value = (usersRes.data ?? []) as UsuarioPerfil[];
+    leads.value = leadsRes.data ?? [];
   })
   .catch(err => console.error('[useClientProfile] Catch error:', err))
   .finally(() => { clearTimeout(loadingGuard); loading.value = false; });
@@ -312,7 +315,7 @@ export function useClientProfile(clientId: string) {
   };
 
   return {
-    clientData, facturas, proyectos, sedes, documentos, usuarios,
+    clientData, facturas, proyectos, sedes, documentos, usuarios, leads,
     financials, loading,
     saveProfile, addSede, updateSede, deleteSede,
     uploadDocumento, deleteDocumento,
