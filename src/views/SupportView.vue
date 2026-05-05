@@ -458,7 +458,7 @@ const formatTime = (iso: string) => {
 .form-row .form-group { flex: 1; }
 .form-group { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
 .form-group label { font-size: 0.85rem; font-weight: 600; color: var(--color-text-muted); }
-.form-input { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.7rem 1rem; border-radius: 6px; font-family: inherit; font-size: 0.95rem; outline: none; width: 100%; box-sizing: border-box; resize: vertical; color-scheme: dark; }
+.form-input { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.9rem 1.1rem; border-radius: 6px; font-family: inherit; font-size: 1rem; outline: none; width: 100%; box-sizing: border-box; resize: vertical; color-scheme: dark; }
 .form-input:focus { border-color: var(--color-primary); }
 .btn-text { background: transparent; border: none; color: var(--color-primary); cursor: pointer; font-size: 0.9rem; }
 .btn-primary { background-color: var(--color-primary); color: #000; font-weight: 700; padding: 0.6rem 1.4rem; border-radius: 6px; border: none; cursor: pointer; }

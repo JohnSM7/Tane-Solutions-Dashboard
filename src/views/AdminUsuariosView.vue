@@ -678,7 +678,7 @@ const timeSince = (d?: string | null) => {
 .form-row .form-group { flex: 1; }
 .form-group { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
 .form-group label { font-size: 0.85rem; font-weight: 600; color: var(--color-text-muted); }
-.form-input { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.7rem 1rem; border-radius: 6px; font-family: inherit; font-size: 0.95rem; outline: none; width: 100%; box-sizing: border-box; color-scheme: dark; }
+.form-input { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.9rem 1.1rem; border-radius: 6px; font-family: inherit; font-size: 1rem; outline: none; width: 100%; box-sizing: border-box; color-scheme: dark; }
 .form-input:focus { border-color: var(--color-primary); }
 .field-hint { font-size: 0.78rem; color: var(--color-text-muted); line-height: 1.4; }
 .field-hint.warning { color: #ffa500; }

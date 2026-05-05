@@ -443,7 +443,7 @@ const confirmDeleteClient = async (c: typeof clients.value[0]) => {
 .form-row .form-group { flex: 1; }
 .form-group { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
 .form-group label { font-size: 0.85rem; font-weight: 600; color: var(--color-text-muted); }
-.form-input { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.7rem 1rem; border-radius: 6px; font-family: inherit; font-size: 0.95rem; outline: none; width: 100%; box-sizing: border-box; color-scheme: dark; }
+.form-input { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.9rem 1.1rem; border-radius: 6px; font-family: inherit; font-size: 1rem; outline: none; width: 100%; box-sizing: border-box; color-scheme: dark; }
 .form-input:focus { border-color: var(--color-primary); }
 .btn-text { background: transparent; border: none; color: var(--color-primary); cursor: pointer; font-size: 0.9rem; }
 .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }

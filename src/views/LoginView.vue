@@ -169,7 +169,7 @@ const toggleMode = () => {
 .brand-header p {
   color: var(--color-text-muted);
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 1rem;
 }
 
 .login-form {
