@@ -45,6 +45,9 @@ const totalCobradoProyecto = (facturasProyecto: Factura[]) =>
 const pctFacturado = (p: ProyectoRentabilidad & { facturas: Factura[] }) =>
   p.presupuesto > 0 ? Math.min(100, Math.round(totalFacturadoProyecto(p.facturas) / p.presupuesto * 100)) : 0;
 
+const pctCobrado = (p: ProyectoRentabilidad & { facturas: Factura[] }) =>
+  p.presupuesto > 0 ? Math.min(100, Math.round(totalCobradoProyecto(p.facturas) / p.presupuesto * 100)) : 0;
+
 // ── Modal: Nuevo / Editar Proyecto ────────────────────────────────────────────
 const showPrModal = ref(false);
 const savingP = ref(false);
@@ -544,23 +547,23 @@ const rentabilidadClientes = computed(() => {
                 <!-- Barra de progreso de facturación -->
                 <div class="billing-progress">
                   <div class="progress-bar-bg">
-                    <div
-                      class="progress-bar-fill"
+                    <!-- Segmento naranja: facturado pero no cobrado -->
+                    <div class="progress-bar-fill partial"
                       :style="{ width: pctFacturado(p) + '%' }"
-                      :class="{
-                        complete: pctFacturado(p) >= 100 && totalCobradoProyecto(p.facturas) >= totalFacturadoProyecto(p.facturas),
-                        partial: pctFacturado(p) >= 100 && totalCobradoProyecto(p.facturas) < totalFacturadoProyecto(p.facturas),
-                      }"
+                    ></div>
+                    <!-- Segmento verde: cobrado -->
+                    <div class="progress-bar-fill complete"
+                      :style="{ width: pctCobrado(p) + '%' }"
                     ></div>
                   </div>
                   <span class="progress-text">
-                    Facturado: <strong>{{ formatEur(totalFacturadoProyecto(p.facturas)) }}</strong>
+                    Cobrado: <strong>{{ formatEur(totalCobradoProyecto(p.facturas)) }}</strong>
                     de {{ formatEur(p.presupuesto) }}
-                    <span v-if="p.presupuesto - totalFacturadoProyecto(p.facturas) > 0" class="por-facturar">
-                      · Por facturar: {{ formatEur(p.presupuesto - totalFacturadoProyecto(p.facturas)) }}
-                    </span>
                     <span v-if="totalFacturadoProyecto(p.facturas) - totalCobradoProyecto(p.facturas) > 0" class="por-cobrar">
                       · Por cobrar: {{ formatEur(totalFacturadoProyecto(p.facturas) - totalCobradoProyecto(p.facturas)) }}
+                    </span>
+                    <span v-if="p.presupuesto - totalFacturadoProyecto(p.facturas) > 0" class="por-facturar">
+                      · Por facturar: {{ formatEur(p.presupuesto - totalFacturadoProyecto(p.facturas)) }}
                     </span>
                   </span>
                 </div>
@@ -935,10 +938,10 @@ const rentabilidadClientes = computed(() => {
 .plan-badge { font-size: 0.75rem; background: rgba(227,255,4,0.1); color: var(--color-primary); border: 1px solid rgba(227,255,4,0.3); padding: 0.15rem 0.5rem; border-radius: 10px; white-space: nowrap; }
 
 .billing-progress { display: flex; flex-direction: column; gap: 0.35rem; }
-.progress-bar-bg { width: 100%; max-width: 400px; height: 6px; background: #333; border-radius: 3px; overflow: hidden; }
-.progress-bar-fill { height: 100%; background: var(--color-primary); border-radius: 3px; transition: width 0.4s; }
-.progress-bar-fill.complete { background: #4ade80; }
-.progress-bar-fill.partial { background: #ffa500; }
+.progress-bar-bg { position: relative; width: 100%; max-width: 400px; height: 6px; background: #333; border-radius: 3px; overflow: hidden; }
+.progress-bar-fill { position: absolute; top: 0; left: 0; height: 100%; border-radius: 3px; transition: width 0.4s; }
+.progress-bar-fill.complete { background: #4ade80; z-index: 2; }
+.progress-bar-fill.partial { background: #ffa500; z-index: 1; }
 .progress-text { font-size: 0.82rem; color: var(--color-text-muted); }
 .progress-text strong { color: var(--color-text-light); }
 .por-facturar { color: #ffa500; }
