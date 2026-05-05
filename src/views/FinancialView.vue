@@ -328,11 +328,28 @@ const rentabilidadClientes = computed(() => {
     coste: number;
   }>();
 
+  // Build project→client lookup so invoices without cliente_id are resolved via proyecto_id
+  const proyectoClienteMap = new Map<string, string>();
+  const proyectoClienteNombre = new Map<string, string>();
+  for (const p of proyectos.value) {
+    if (p.id && p.cliente_id) {
+      proyectoClienteMap.set(p.id, p.cliente_id);
+      if (p.clientes?.nombre) proyectoClienteNombre.set(p.id, p.clientes.nombre);
+    }
+  }
+
   for (const f of facturas.value) {
-    if (!f.cliente_id) continue;
-    const nombre = f.clientes?.nombre ?? f.cliente_id;
-    if (!map.has(f.cliente_id)) map.set(f.cliente_id, { nombre, facturado: 0, cobrado: 0, coste: 0 });
-    const entry = map.get(f.cliente_id)!;
+    // Use direct cliente_id; fall back to the linked project's cliente_id
+    const clienteId = f.cliente_id
+      ?? (f.proyecto_id ? (proyectoClienteMap.get(f.proyecto_id) ?? null) : null);
+    if (!clienteId) continue;
+
+    const nombre = f.clientes?.nombre
+      ?? (f.proyecto_id ? proyectoClienteNombre.get(f.proyecto_id) : undefined)
+      ?? clienteId;
+
+    if (!map.has(clienteId)) map.set(clienteId, { nombre, facturado: 0, cobrado: 0, coste: 0 });
+    const entry = map.get(clienteId)!;
     entry.facturado += f.importe;
     if (f.estado === 'Pagada') entry.cobrado += f.importe;
   }
@@ -936,7 +953,7 @@ const rentabilidadClientes = computed(() => {
 .rent-table { display: flex; flex-direction: column; gap: 0; }
 .rent-header {
   display: grid;
-  grid-template-columns: 1fr repeat(5, 110px);
+  grid-template-columns: 1fr repeat(6, 100px);
   gap: 0.5rem;
   padding: 0.4rem 0.5rem;
   font-size: 0.75rem;
@@ -948,7 +965,7 @@ const rentabilidadClientes = computed(() => {
 }
 .rent-row {
   display: grid;
-  grid-template-columns: 1fr repeat(5, 110px);
+  grid-template-columns: 1fr repeat(6, 100px);
   gap: 0.5rem;
   padding: 0.65rem 0.5rem;
   font-size: 0.88rem;
