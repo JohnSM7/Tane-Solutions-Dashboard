@@ -48,7 +48,7 @@ const filteredProyectos = computed(() => {
 });
 
 const filteredDocumentos = computed(() => {
-  if (selectedSedeId.value === 'all') return documentos.value.filter((d: any) => d.sede_id === null);
+  if (selectedSedeId.value === 'all') return documentos.value;
   return documentos.value.filter((d: any) => d.sede_id === selectedSedeId.value);
 });
 
@@ -632,10 +632,8 @@ const formatDate = (iso: string) =>
             </div>
             <p v-if="uploadError" class="error-msg">{{ uploadError }}</p>
 
-            <div v-if="selectedSedeId === 'all' && filteredDocumentos.length === 0" class="empty-state">Sin documentos sin sede asignada</div>
-            <div v-else-if="selectedSedeId !== 'all' && filteredDocumentos.length === 0" class="empty-state">Sin documentos en esta sede</div>
-            <p v-if="selectedSedeId === 'all' && filteredDocumentos.length > 0" class="docs-warning">⚠️ Estos documentos no tienen sede asignada. Edítalos para asignarlos a una sede.</p>
-            <ul v-if="filteredDocumentos.length > 0" class="docs-list">
+            <div v-if="filteredDocumentos.length === 0" class="empty-state">{{ selectedSedeId === 'all' ? 'Sin documentos' : 'Sin documentos en esta sede' }}</div>
+            <ul v-else class="docs-list">
               <li v-for="doc in filteredDocumentos" :key="doc.id" class="doc-item" :class="{ 'doc-item--editing': editingDocId === doc.id }">
                 <div class="doc-info">
                   <span class="doc-icon">📄</span>
