@@ -60,7 +60,7 @@ const filteredSedes = computed(() => {
 
 // ── Editar perfil ─────────────────────────────────────────────────────────────
 const showEditModal = ref(false);
-const editForm = ref({ name: '', contact: '', telefono: '', industry: '', logo: '', status: '', cif: '', direccionFacturacion: '' });
+const editForm = ref({ name: '', contact: '', contactEmail: '', telefono: '', industry: '', logo: '', status: '', cif: '', direccionFacturacion: '' });
 const savingProfile = ref(false);
 
 const openEditModal = () => {
@@ -68,6 +68,7 @@ const openEditModal = () => {
   editForm.value = {
     name: clientData.value.name,
     contact: clientData.value.contact,
+    contactEmail: clientData.value.contactEmail ?? '',
     telefono: clientData.value.telefono ?? '',
     industry: clientData.value.industry,
     logo: clientData.value.logo,
@@ -1059,6 +1060,7 @@ const formatDate = (iso: string) =>
           <div class="form-group"><label>Contacto</label><input v-model="editForm.contact" class="form-input" /></div>
           <div class="form-group"><label>Teléfono</label><input v-model="editForm.telefono" class="form-input" type="tel" placeholder="+34 600 000 000" /></div>
         </div>
+        <div class="form-group"><label>Email de contacto</label><input v-model="editForm.contactEmail" class="form-input" type="email" placeholder="cliente@ejemplo.com" /></div>
         <div class="form-group"><label>Industria / Sector</label><input v-model="editForm.industry" class="form-input" /></div>
         <div class="form-group"><label>CIF / NIF</label><input v-model="editForm.cif" class="form-input" placeholder="B-12345678" /></div>
         <div class="form-group"><label>Dirección de facturación</label><input v-model="editForm.direccionFacturacion" class="form-input" placeholder="Calle Ejemplo, 1, 28001 Madrid" /></div>

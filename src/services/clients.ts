@@ -228,10 +228,11 @@ export function useClientProfile(clientId: string) {
   .catch(err => console.error('[useClientProfile] Catch error:', err))
   .finally(() => { clearTimeout(loadingGuard); loading.value = false; });
 
-  const saveProfile = async (updates: Partial<{ name: string; contact: string; telefono: string; industry: string; logo: string; status: string; cif: string; direccionFacturacion: string }>) => {
+  const saveProfile = async (updates: Partial<{ name: string; contact: string; contactEmail: string; telefono: string; industry: string; logo: string; status: string; cif: string; direccionFacturacion: string }>) => {
     const dbUpdates: Record<string, any> = {};
     if ('name' in updates)                 dbUpdates.nombre                = updates.name;
     if ('contact' in updates)              dbUpdates.contacto              = updates.contact;
+    if ('contactEmail' in updates)         dbUpdates.email_contacto        = updates.contactEmail;
     if ('telefono' in updates)             dbUpdates.telefono              = updates.telefono;
     if ('industry' in updates)             dbUpdates.sector                = updates.industry;
     if ('logo' in updates)                 dbUpdates.logo                  = updates.logo;
