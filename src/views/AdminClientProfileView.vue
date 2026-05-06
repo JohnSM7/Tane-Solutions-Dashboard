@@ -273,6 +273,60 @@ const handleInformeGenerado = () => {
   fetchInformes();
 };
 
+// ── Subir informe manual ──────────────────────────────────────────────────────
+const showSubirInformeModal = ref(false);
+const subiendoInformeManual = ref(false);
+const subirInformeForm = ref({ titulo: '', proyecto: '', periodo: '' });
+const subirInformeFile = ref<File | null>(null);
+const subirInformeInput = ref<HTMLInputElement | null>(null);
+
+const openSubirInformeModal = () => {
+  subirInformeForm.value = { titulo: '', proyecto: '', periodo: '' };
+  subirInformeFile.value = null;
+  showSubirInformeModal.value = true;
+};
+
+const handleSubirInformeFile = (e: Event) => {
+  subirInformeFile.value = (e.target as HTMLInputElement).files?.[0] ?? null;
+  if (subirInformeFile.value && !subirInformeForm.value.titulo) {
+    subirInformeForm.value.titulo = subirInformeFile.value.name.replace(/\.[^.]+$/, '');
+  }
+};
+
+const confirmarSubirInforme = async () => {
+  if (!subirInformeFile.value || !subirInformeForm.value.titulo.trim()) return;
+  subiendoInformeManual.value = true;
+  try {
+    const file = subirInformeFile.value;
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 80);
+    const path = `${clientId}/${Date.now()}_${safeName}`;
+
+    const { error: upErr } = await supabase.storage.from('informes').upload(path, file, { upsert: false });
+    if (upErr) throw upErr;
+
+    const { data: urlData } = supabase.storage.from('informes').getPublicUrl(path);
+
+    const { data, error } = await supabase.from('informes').insert({
+      cliente_id: clientId,
+      titulo: subirInformeForm.value.titulo.trim(),
+      proyecto: subirInformeForm.value.proyecto.trim() || '',
+      periodo: subirInformeForm.value.periodo.trim() || '',
+      url_pdf: urlData.publicUrl,
+      storage_path: path,
+      generado_por: 'admin',
+    }).select('*, informe_adjuntos(*)').single();
+
+    if (error) throw error;
+    informesGuardados.value.unshift(data as any);
+    showSubirInformeModal.value = false;
+  } catch (err: any) {
+    alert('Error al subir el informe: ' + (err?.message ?? ''));
+  } finally {
+    subiendoInformeManual.value = false;
+    if (subirInformeInput.value) subirInformeInput.value.value = '';
+  }
+};
+
 // ── Adjuntos de informe ───────────────────────────────────────────────────────
 const adjuntandoInformeId = ref<string | null>(null);
 const subiendoAdjunto = ref(false);
@@ -651,7 +705,10 @@ const formatDate = (iso: string) =>
 
           <DashboardCard title="Historial de Informes de Trabajo">
             <template #actions>
-              <div v-if="cargandoInformes" class="loading-spinner-sm"></div>
+              <div style="display:flex;gap:0.5rem;align-items:center">
+                <div v-if="cargandoInformes" class="loading-spinner-sm"></div>
+                <button class="btn-outline" @click="openSubirInformeModal">⬆ Subir informe</button>
+              </div>
             </template>
 
             <div v-if="informesGuardados.length === 0" class="empty-state">
@@ -885,6 +942,54 @@ const formatDate = (iso: string) =>
     </div>
 
     <div v-else class="loading-state">Cliente no encontrado.</div>
+
+    <!-- Modal: Subir informe manual -->
+    <div class="modal-overlay" v-if="showSubirInformeModal">
+      <div class="modal-box">
+        <p class="modal-title">Subir Informe</p>
+        <p class="modal-subtitle" style="color:var(--color-text-muted);font-size:0.85rem;margin:-0.5rem 0 1rem;">
+          Sube un PDF, Word u otro archivo. El cliente podrá verlo y descargarlo desde su panel.
+        </p>
+
+        <div class="form-group">
+          <label>Archivo *</label>
+          <input
+            ref="subirInformeInput"
+            type="file"
+            class="form-input"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.png,.jpg,.jpeg"
+            @change="handleSubirInformeFile"
+          />
+        </div>
+
+        <div class="form-group">
+          <label>Título *</label>
+          <input v-model="subirInformeForm.titulo" class="form-input" placeholder="Ej: Informe mensual mayo 2026" />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Proyecto</label>
+            <input v-model="subirInformeForm.proyecto" class="form-input" placeholder="Ej: Web Corporativa" />
+          </div>
+          <div class="form-group">
+            <label>Periodo</label>
+            <input v-model="subirInformeForm.periodo" class="form-input" placeholder="Ej: Mayo 2026" />
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn-text" @click="showSubirInformeModal = false">Cancelar</button>
+          <button
+            class="btn-primary"
+            @click="confirmarSubirInforme"
+            :disabled="subiendoInformeManual || !subirInformeFile || !subirInformeForm.titulo.trim()"
+          >
+            {{ subiendoInformeManual ? 'Subiendo...' : 'Subir informe' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Modal: Editar perfil -->
     <div class="modal-overlay" v-if="showEditModal">
