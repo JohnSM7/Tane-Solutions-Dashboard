@@ -311,6 +311,14 @@ const formatDate = (iso: string) =>
                 <td class="muted">{{ formatDate(lead.fecha_creacion) }}</td>
                 <td>
                   <div class="row-actions">
+                    <a
+                      v-if="lead.link_canva"
+                      :href="lead.link_canva"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="btn-icon-text"
+                      title="Ver propuesta"
+                    >🔗</a>
                     <button class="btn-icon-text" @click="openEdit(lead)">✏️</button>
                     <button class="btn-icon-text danger" @click="confirmDelete(lead)">🗑️</button>
                   </div>

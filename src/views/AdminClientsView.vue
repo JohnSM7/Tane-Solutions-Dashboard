@@ -231,6 +231,7 @@ const confirmDeleteClient = async (c: typeof clients.value[0]) => {
                 <div class="client-name-cell">
                   <span>{{ client.contact }}</span>
                   <span class="client-industry">{{ client.contactEmail }}</span>
+                  <span v-if="client.telefono" class="client-industry">{{ client.telefono }}</span>
                 </div>
               </td>
               <td data-label="Cobrado" class="text-success">{{ client.financials?.paid ?? '—' }}</td>

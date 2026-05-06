@@ -61,7 +61,7 @@ const filteredSedes = computed(() => {
 
 // ── Editar perfil ─────────────────────────────────────────────────────────────
 const showEditModal = ref(false);
-const editForm = ref({ name: '', contact: '', industry: '', logo: '', status: '', cif: '', direccionFacturacion: '' });
+const editForm = ref({ name: '', contact: '', telefono: '', industry: '', logo: '', status: '', cif: '', direccionFacturacion: '' });
 const savingProfile = ref(false);
 
 const openEditModal = () => {
@@ -69,6 +69,7 @@ const openEditModal = () => {
   editForm.value = {
     name: clientData.value.name,
     contact: clientData.value.contact,
+    telefono: clientData.value.telefono ?? '',
     industry: clientData.value.industry,
     logo: clientData.value.logo,
     status: clientData.value.status,
@@ -371,12 +372,40 @@ const formatDate = (iso: string) =>
             </div>
           </div>
         </div>
-        <div style="display:flex; gap:0.75rem; align-items:center;">
+        <div style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
           <button class="btn-outline" @click="generarPDF" :disabled="generandoPDF">
             {{ generandoPDF ? '...' : '📄 Informe PDF' }}
           </button>
           <button class="btn-primary" @click="openEditModal">Editar Perfil</button>
         </div>
+      </div>
+
+      <!-- Panel de datos del cliente siempre visible -->
+      <div class="client-data-panel">
+        <div class="cdp-item" v-if="clientData.contactEmail">
+          <span class="cdp-label">Email</span>
+          <a :href="`mailto:${clientData.contactEmail}`" class="cdp-value link">{{ clientData.contactEmail }}</a>
+        </div>
+        <div class="cdp-item" v-if="clientData.telefono">
+          <span class="cdp-label">Teléfono</span>
+          <a :href="`tel:${clientData.telefono}`" class="cdp-value link">{{ clientData.telefono }}</a>
+        </div>
+        <div class="cdp-item" v-if="clientData.cif">
+          <span class="cdp-label">CIF / NIF</span>
+          <span class="cdp-value">{{ clientData.cif }}</span>
+        </div>
+        <div class="cdp-item" v-if="clientData.direccionFacturacion">
+          <span class="cdp-label">Dirección facturación</span>
+          <span class="cdp-value">{{ clientData.direccionFacturacion }}</span>
+        </div>
+        <template v-for="lead in leads.filter(l => l.link_canva)" :key="lead.id">
+          <div class="cdp-item">
+            <span class="cdp-label">Propuesta</span>
+            <a :href="lead.link_canva" target="_blank" rel="noopener noreferrer" class="cdp-value link proposal-link">
+              🔗 {{ lead.empresa || lead.nombre }}
+            </a>
+          </div>
+        </template>
       </div>
 
       <div class="content-grid">
@@ -765,7 +794,10 @@ const formatDate = (iso: string) =>
       <div class="modal-box">
         <p class="modal-title">Editar Perfil del Cliente</p>
         <div class="form-group"><label>Nombre *</label><input v-model="editForm.name" class="form-input" /></div>
-        <div class="form-group"><label>Contacto</label><input v-model="editForm.contact" class="form-input" /></div>
+        <div class="form-row">
+          <div class="form-group"><label>Contacto</label><input v-model="editForm.contact" class="form-input" /></div>
+          <div class="form-group"><label>Teléfono</label><input v-model="editForm.telefono" class="form-input" type="tel" placeholder="+34 600 000 000" /></div>
+        </div>
         <div class="form-group"><label>Industria / Sector</label><input v-model="editForm.industry" class="form-input" /></div>
         <div class="form-group"><label>CIF / NIF</label><input v-model="editForm.cif" class="form-input" placeholder="B-12345678" /></div>
         <div class="form-group"><label>Dirección de facturación</label><input v-model="editForm.direccionFacturacion" class="form-input" placeholder="Calle Ejemplo, 1, 28001 Madrid" /></div>
@@ -820,6 +852,23 @@ const formatDate = (iso: string) =>
 
 <style scoped>
 .view-container { display: flex; flex-direction: column; gap: 2rem; }
+
+/* Panel de datos del cliente */
+.client-data-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.cdp-item { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.85rem; }
+.cdp-label { color: var(--color-text-muted); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+.cdp-value { color: var(--color-text-light); }
+.cdp-value.link { color: var(--color-primary); text-decoration: underline; text-underline-offset: 3px; }
+.cdp-value.link:hover { color: var(--color-primary-hover); }
+.proposal-link { font-weight: 600; }
 
 /* Report CTA (collapsed state) */
 .report-cta { display: flex; flex-direction: column; gap: 1rem; align-items: flex-start; }

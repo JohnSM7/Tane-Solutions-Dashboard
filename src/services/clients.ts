@@ -8,6 +8,7 @@ export type Cliente = {
   nombre: string;
   contacto: string;
   email_contacto: string;
+  telefono: string;
   sector: string;
   estado: string;
   logo: string;
@@ -129,6 +130,7 @@ export function mapCliente(c: Cliente) {
     name: c.nombre,
     contact: c.contacto,
     contactEmail: c.email_contacto,
+    telefono: c.telefono ?? '',
     industry: c.sector,
     status: c.estado,
     logo: c.logo ?? '',
@@ -226,10 +228,11 @@ export function useClientProfile(clientId: string) {
   .catch(err => console.error('[useClientProfile] Catch error:', err))
   .finally(() => { clearTimeout(loadingGuard); loading.value = false; });
 
-  const saveProfile = async (updates: Partial<{ name: string; contact: string; industry: string; logo: string; status: string; cif: string; direccionFacturacion: string }>) => {
+  const saveProfile = async (updates: Partial<{ name: string; contact: string; telefono: string; industry: string; logo: string; status: string; cif: string; direccionFacturacion: string }>) => {
     const dbUpdates: Record<string, any> = {};
     if ('name' in updates)                 dbUpdates.nombre                = updates.name;
     if ('contact' in updates)              dbUpdates.contacto              = updates.contact;
+    if ('telefono' in updates)             dbUpdates.telefono              = updates.telefono;
     if ('industry' in updates)             dbUpdates.sector                = updates.industry;
     if ('logo' in updates)                 dbUpdates.logo                  = updates.logo;
     if ('status' in updates)               dbUpdates.estado                = updates.status;
