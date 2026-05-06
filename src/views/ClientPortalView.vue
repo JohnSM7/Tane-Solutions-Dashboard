@@ -559,7 +559,7 @@ const estadoColor: Record<string, string> = {
       </div>
     </div>
 
-    <div v-else class="loading-state">No se encontró tu perfil. Contacta con la agencia.</div>
+    <div v-if="!loading && !clientData" class="loading-state">No se encontró tu perfil. Contacta con la agencia.</div>
 
     <!-- Modal: Abrir ticket de soporte -->
     <div class="modal-overlay" v-if="showTicketModal">

@@ -945,7 +945,7 @@ const formatDate = (iso: string) =>
       </div>
     </div>
 
-    <div v-else class="loading-state">Cliente no encontrado.</div>
+    <div v-if="!loading && !clientData" class="loading-state">Cliente no encontrado.</div>
 
     <!-- Modal: Subir informe manual -->
     <div class="modal-overlay" v-if="showSubirInformeModal">
