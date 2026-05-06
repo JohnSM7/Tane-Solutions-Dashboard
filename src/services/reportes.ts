@@ -58,6 +58,18 @@ export type InformeGuardado = {
   generado_por: string;
   creado_en: string;
   contenido?: InformeProyecto;
+  adjuntos?: InformeAdjunto[];
+};
+
+export type InformeAdjunto = {
+  id: string;
+  informe_id: string;
+  nombre: string;
+  url: string;
+  storage_path: string;
+  tipo: string;
+  tamanio: number | null;
+  created_at: string;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -288,15 +300,70 @@ export async function guardarInforme(informe: InformeProyecto, clienteId: string
   return data as InformeGuardado;
 }
 
-export async function listarInformes(clienteId: string) {
-  const { data, error } = await supabase.from('informes').select('*').eq('cliente_id', clienteId).order('creado_en', { ascending: false });
+export async function listarInformes(clienteId: string): Promise<InformeGuardado[]> {
+  const { data, error } = await supabase
+    .from('informes')
+    .select('*, informe_adjuntos(*)')
+    .eq('cliente_id', clienteId)
+    .order('creado_en', { ascending: false });
   if (error) throw error;
-  return data;
+  return (data ?? []) as InformeGuardado[];
 }
 
 export async function eliminarInforme(informe: InformeGuardado) {
+  // Borrar adjuntos del storage
+  if (informe.adjuntos?.length) {
+    const paths = informe.adjuntos.map(a => a.storage_path).filter(Boolean);
+    if (paths.length) await supabase.storage.from('informes').remove(paths);
+  }
   if (informe.storage_path) await supabase.storage.from('informes').remove([informe.storage_path]);
   await supabase.from('informes').delete().eq('id', informe.id);
+}
+
+const ALLOWED_ADJUNTO_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain', 'text/csv',
+]);
+
+export async function subirAdjunto(
+  informe: InformeGuardado,
+  file: File,
+): Promise<InformeAdjunto> {
+  if (!ALLOWED_ADJUNTO_TYPES.has(file.type)) {
+    throw new Error(`Tipo de archivo no permitido (${file.type}). Se aceptan PDF, imágenes, Word y Excel.`);
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    throw new Error('El archivo supera el límite de 20 MB.');
+  }
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 80);
+  const path = `adjuntos/${informe.cliente_id}/${informe.id}/${Date.now()}_${safeName}`;
+
+  const { error: upErr } = await supabase.storage.from('informes').upload(path, file, { upsert: false });
+  if (upErr) throw upErr;
+
+  const { data: urlData } = supabase.storage.from('informes').getPublicUrl(path);
+
+  const tipo = detectarTipoArchivo(file.name);
+  const { data, error } = await supabase.from('informe_adjuntos').insert({
+    informe_id: informe.id,
+    nombre: file.name,
+    url: urlData.publicUrl,
+    storage_path: path,
+    tipo,
+    tamanio: file.size,
+  }).select().single();
+  if (error) throw error;
+  return data as InformeAdjunto;
+}
+
+export async function eliminarAdjunto(adjunto: InformeAdjunto) {
+  await supabase.storage.from('informes').remove([adjunto.storage_path]);
+  await supabase.from('informe_adjuntos').delete().eq('id', adjunto.id);
 }
 
 export async function descargarReportePDF(informe: InformeProyecto) {

@@ -7,7 +7,7 @@ import ClientReportModule from '../components/ClientReportModule.vue';
 import { useClientProfile, computeHealthScore, healthColor, healthLabel, type Sede } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
 import { ESTADO_COLORS as LEAD_ESTADO_COLORS } from '../services/commercial';
-import { listarInformes, eliminarInforme, type InformeGuardado } from '../services/reportes';
+import { listarInformes, eliminarInforme, subirAdjunto, eliminarAdjunto, type InformeGuardado, type InformeAdjunto } from '../services/reportes';
 import { useGmbHistorico, tomarSnapshot } from '../services/gmbHistorico';
 import GmbChart from '../components/GmbChart.vue';
 import { generarInformeMensualPDF } from '../services/informeMensual';
@@ -270,7 +270,54 @@ const handleDeleteInforme = async (inf: InformeGuardado) => {
 };
 
 const handleInformeGenerado = () => {
-  fetchInformes(); // Recargar lista al generar uno nuevo
+  fetchInformes();
+};
+
+// ── Adjuntos de informe ───────────────────────────────────────────────────────
+const adjuntandoInformeId = ref<string | null>(null);
+const subiendoAdjunto = ref(false);
+const adjuntoInput = ref<HTMLInputElement | null>(null);
+const adjuntoInformeTarget = ref<InformeGuardado | null>(null);
+
+const openAdjuntoUpload = (inf: InformeGuardado) => {
+  adjuntoInformeTarget.value = inf;
+  adjuntandoInformeId.value = inf.id;
+  adjuntoInput.value?.click();
+};
+
+const handleAdjuntoChange = async (e: Event) => {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file || !adjuntoInformeTarget.value) return;
+  subiendoAdjunto.value = true;
+  try {
+    const adjunto = await subirAdjunto(adjuntoInformeTarget.value, file);
+    const idx = informesGuardados.value.findIndex(i => i.id === adjuntoInformeTarget.value!.id);
+    if (idx !== -1) {
+      informesGuardados.value[idx] = {
+        ...informesGuardados.value[idx]!,
+        adjuntos: [...(informesGuardados.value[idx]!.adjuntos ?? []), adjunto],
+      };
+    }
+  } catch (err: any) {
+    alert('Error al subir el archivo: ' + (err?.message ?? ''));
+  } finally {
+    subiendoAdjunto.value = false;
+    adjuntandoInformeId.value = null;
+    adjuntoInformeTarget.value = null;
+    if (adjuntoInput.value) adjuntoInput.value.value = '';
+  }
+};
+
+const handleDeleteAdjunto = async (inf: InformeGuardado, adj: InformeAdjunto) => {
+  if (!confirm(`¿Eliminar el archivo "${adj.nombre}"?`)) return;
+  await eliminarAdjunto(adj);
+  const idx = informesGuardados.value.findIndex(i => i.id === inf.id);
+  if (idx !== -1) {
+    informesGuardados.value[idx] = {
+      ...informesGuardados.value[idx]!,
+      adjuntos: informesGuardados.value[idx]!.adjuntos?.filter(a => a.id !== adj.id),
+    };
+  }
 };
 
 // ── Visualizar informe detallado ───────────────────────────────────────────────
@@ -593,30 +640,58 @@ const formatDate = (iso: string) =>
           <!-- ─────────────────────────────────────────────────── -->
           <!-- HISTORIAL DE INFORMES                               -->
           <!-- ─────────────────────────────────────────────────── -->
+          <!-- Input oculto para adjuntos -->
+          <input
+            ref="adjuntoInput"
+            type="file"
+            style="display:none"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx,.txt,.csv"
+            @change="handleAdjuntoChange"
+          />
+
           <DashboardCard title="Historial de Informes de Trabajo">
             <template #actions>
               <div v-if="cargandoInformes" class="loading-spinner-sm"></div>
             </template>
-            
+
             <div v-if="informesGuardados.length === 0" class="empty-state">
               No hay informes guardados para este cliente.
             </div>
-            
+
             <ul v-else class="docs-list">
-              <li v-for="inf in informesGuardados" :key="inf.id" class="doc-item">
-                <div class="doc-info">
-                  <span class="doc-icon">📊</span>
-                  <div class="doc-meta">
-                    <span class="doc-name">{{ inf.titulo }}</span>
-                    <span class="doc-details">
-                      {{ inf.proyecto }} · {{ new Date(inf.creado_en).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }) }}
-                    </span>
+              <li v-for="inf in informesGuardados" :key="inf.id" class="informe-item">
+                <div class="doc-item">
+                  <div class="doc-info">
+                    <span class="doc-icon">📊</span>
+                    <div class="doc-meta">
+                      <span class="doc-name">{{ inf.titulo }}</span>
+                      <span class="doc-details">
+                        {{ inf.proyecto }} · {{ new Date(inf.creado_en).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }) }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="doc-actions">
+                    <button @click="abrirInforme(inf)" class="btn-text">👁️ Ver</button>
+                    <a :href="inf.url_pdf" target="_blank" class="btn-icon" title="Ver PDF">📄</a>
+                    <button
+                      class="btn-icon"
+                      :disabled="subiendoAdjunto && adjuntandoInformeId === inf.id"
+                      @click="openAdjuntoUpload(inf)"
+                      title="Adjuntar archivo"
+                    >{{ subiendoAdjunto && adjuntandoInformeId === inf.id ? '⏳' : '📎' }}</button>
+                    <button class="btn-icon delete" @click="handleDeleteInforme(inf)" title="Eliminar">🗑️</button>
                   </div>
                 </div>
-                <div class="doc-actions">
-                  <button @click="abrirInforme(inf)" class="btn-text">👁️ Ver</button>
-                  <a :href="inf.url_pdf" target="_blank" class="btn-icon" title="Ver PDF">📄</a>
-                  <button class="btn-icon delete" @click="handleDeleteInforme(inf)" title="Eliminar">🗑️</button>
+                <!-- Adjuntos del informe -->
+                <div v-if="inf.adjuntos?.length" class="informe-adjuntos">
+                  <div v-for="adj in inf.adjuntos" :key="adj.id" class="adjunto-row">
+                    <a :href="adj.url" target="_blank" rel="noopener noreferrer" class="adjunto-link">
+                      <span class="adjunto-icon">{{ adj.tipo === 'pdf' ? '📄' : adj.tipo === 'image' ? '🖼️' : '📎' }}</span>
+                      <span class="adjunto-nombre">{{ adj.nombre }}</span>
+                      <span v-if="adj.tamanio" class="adjunto-size">{{ (adj.tamanio / 1024).toFixed(0) }} KB</span>
+                    </a>
+                    <button class="btn-icon delete" @click="handleDeleteAdjunto(inf, adj)" title="Eliminar adjunto">🗑️</button>
+                  </div>
                 </div>
               </li>
             </ul>
@@ -778,9 +853,31 @@ const formatDate = (iso: string) =>
               </ol>
             </div>
           </div>
+
+          <!-- Adjuntos -->
+          <div class="report-section" v-if="selectedInforme.adjuntos?.length">
+            <label>ARCHIVOS ADJUNTOS</label>
+            <div class="adjuntos-modal-list">
+              <a
+                v-for="adj in selectedInforme.adjuntos"
+                :key="adj.id"
+                :href="adj.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="adjunto-modal-item"
+              >
+                <span>{{ adj.tipo === 'pdf' ? '📄' : adj.tipo === 'image' ? '🖼️' : '📎' }}</span>
+                <span class="adjunto-nombre">{{ adj.nombre }}</span>
+                <span v-if="adj.tamanio" class="adjunto-size">{{ (adj.tamanio / 1024).toFixed(0) }} KB</span>
+              </a>
+            </div>
+          </div>
         </div>
 
         <div class="modal-actions">
+          <button class="btn-icon-text" @click="openAdjuntoUpload(selectedInforme)" :disabled="subiendoAdjunto">
+            {{ subiendoAdjunto ? '⏳ Subiendo...' : '📎 Adjuntar archivo' }}
+          </button>
           <a :href="selectedInforme.url_pdf" target="_blank" class="btn-primary">📄 Descargar PDF</a>
           <button class="btn-text" @click="selectedInforme = null">Cerrar</button>
         </div>
@@ -971,7 +1068,19 @@ const formatDate = (iso: string) =>
 .upload-hint { font-size: 0.8rem; color: var(--color-text-muted); display: block; margin-top: 0.3rem; }
 .error-msg { color: #ff4444; font-size: 0.85rem; margin-bottom: 0.75rem; }
 .docs-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.informe-item { display: flex; flex-direction: column; gap: 0; }
 .doc-item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: var(--color-bg-lighter); border-radius: 8px; }
+.informe-item .doc-item { border-radius: 8px 8px 0 0; }
+.informe-adjuntos { background: rgba(255,255,255,0.02); border: 1px solid var(--color-border); border-top: none; border-radius: 0 0 8px 8px; padding: 0.4rem 0.75rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.adjunto-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.adjunto-link { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; color: var(--color-text-muted); flex: 1; min-width: 0; overflow: hidden; text-decoration: none; }
+.adjunto-link:hover { color: var(--color-primary); }
+.adjunto-nombre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adjunto-size { font-size: 0.72rem; color: var(--color-text-muted); white-space: nowrap; flex-shrink: 0; }
+.adjunto-icon { flex-shrink: 0; }
+.adjuntos-modal-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.adjunto-modal-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.75rem; background: rgba(255,255,255,0.03); border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-light); text-decoration: none; font-size: 0.88rem; transition: border-color 0.2s; }
+.adjunto-modal-item:hover { border-color: var(--color-primary); color: var(--color-primary); }
 .doc-info { display: flex; gap: 0.75rem; align-items: center; overflow: hidden; }
 .doc-icon { font-size: 1.3rem; flex-shrink: 0; }
 .doc-meta { display: flex; flex-direction: column; overflow: hidden; }

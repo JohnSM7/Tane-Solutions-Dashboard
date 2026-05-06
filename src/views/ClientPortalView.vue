@@ -529,6 +529,27 @@ const estadoColor: Record<string, string> = {
               </ol>
             </div>
           </div>
+
+          <!-- Archivos adjuntos -->
+          <div class="report-section" v-if="selectedInforme.adjuntos?.length">
+            <label>ARCHIVOS ADJUNTOS</label>
+            <div class="adjuntos-cliente-list">
+              <a
+                v-for="adj in selectedInforme.adjuntos"
+                :key="adj.id"
+                :href="adj.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="adjunto-cliente-item"
+                :download="adj.nombre"
+              >
+                <span class="adj-icon">{{ adj.tipo === 'pdf' ? '📄' : adj.tipo === 'image' ? '🖼️' : '📎' }}</span>
+                <span class="adj-nombre">{{ adj.nombre }}</span>
+                <span v-if="adj.tamanio" class="adj-size">{{ (adj.tamanio / 1024).toFixed(0) }} KB</span>
+                <span class="adj-dl">⬇</span>
+              </a>
+            </div>
+          </div>
         </div>
 
         <div class="modal-actions">
@@ -788,6 +809,13 @@ const estadoColor: Record<string, string> = {
 .report-section label { font-size: 0.75rem; font-weight: 800; color: #aaa; letter-spacing: 0.1em; text-transform: uppercase; }
 .report-section p { margin: 0; line-height: 1.6; color: #eee; font-size: 1rem; white-space: pre-line; }
 .resumen-text-box { border-left: 3px solid var(--color-primary); padding: 1.25rem !important; background: rgba(227,255,4,0.03); border-radius: 4px; }
+.adjuntos-cliente-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.adjunto-cliente-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.9rem; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; color: var(--color-text-light); text-decoration: none; transition: border-color 0.2s, color 0.2s; }
+.adjunto-cliente-item:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.adj-icon { font-size: 1.1rem; flex-shrink: 0; }
+.adj-nombre { flex: 1; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adj-size { font-size: 0.75rem; color: var(--color-text-muted); white-space: nowrap; }
+.adj-dl { margin-left: auto; font-size: 0.85rem; color: var(--color-text-muted); flex-shrink: 0; }
 
 .client-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1.25rem; }
 .client-kpi-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 1.25rem; border-radius: 12px; display: flex; flex-direction: column; align-items: center; text-align: center; }
