@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed } from 'vue';
 import DashboardCard from '../components/DashboardCard.vue';
 import ClientReportModule from '../components/ClientReportModule.vue';
 import { authStore } from '../store/auth';
 import { useClientProfile } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
-import { listarInformes, type InformeGuardado } from '../services/reportes';
 import { generateInvoicePDF, type Factura } from '../services/financial';
 import { createTicket, updateTicket, useClientTickets } from '../services/support';
 import { supabase } from '../supabase';
@@ -195,35 +194,7 @@ supabase.from('links_cliente').select('*').eq('cliente_id', clientId).order('cre
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('es', { day: '2-digit', month: 'short', year: '2-digit' });
 
-const formatDateLong = (iso: string) =>
-  new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
 
-// ── Informes del cliente ───────────────────────────────────────────────────────
-const informes = ref<InformeGuardado[]>([]);
-const cargandoInformes = ref(true);
-
-onMounted(async () => {
-  if (clientId) {
-    try {
-      informes.value = await listarInformes(clientId);
-    } catch { /* tabla puede no existir */ }
-  }
-  cargandoInformes.value = false;
-});
-
-// ── Visualizar informe detallado ───────────────────────────────────────────────
-const selectedInforme = ref<InformeGuardado | null>(null);
-
-const abrirInforme = (inf: InformeGuardado) => {
-  selectedInforme.value = inf;
-};
-
-const totalHoras = (inf: InformeGuardado) =>
-  (inf.contenido?.tareas ?? []).reduce((s, t) => s + (t.horas ?? 0), 0);
-
-const estadoColor: Record<string, string> = {
-  'Completada': '#4ade80', 'En progreso': '#ffa500', 'Pendiente': '#888',
-};
 </script>
 
 <template>
@@ -430,134 +401,7 @@ const estadoColor: Record<string, string> = {
         </div>
       </div>
 
-      <!-- Informes de trabajo -->
-      <div v-if="!cargandoInformes && informes.length > 0" class="informes-section">
-        <h3 class="section-title">📊 Informes de Trabajo</h3>
-        <div class="informes-grid">
-          <div v-for="inf in informes" :key="inf.id" class="informe-card">
-            <div class="informe-icon">📄</div>
-            <div class="informe-body">
-              <strong class="informe-titulo">{{ inf.titulo }}</strong>
-              <div class="informe-meta">
-                <span>{{ inf.proyecto }}</span>
-                <span v-if="inf.periodo"> · {{ inf.periodo }}</span>
-              </div>
-              <small class="informe-fecha">{{ formatDateLong(inf.creado_en) }}</small>
-            </div>
-            <div class="informe-actions">
-              <button @click="abrirInforme(inf)" class="btn-text">👁️ Ver Informe</button>
-              <a :href="inf.url_pdf" target="_blank" class="btn-download">
-                ⬇️ PDF
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
     </template>
-
-    <!-- Modal: Detalle del Informe -->
-    <div v-if="selectedInforme" class="modal-overlay report-detail-overlay">
-      <div class="modal-box report-modal">
-        <div class="report-modal-header">
-          <div class="report-modal-title">
-            <h2>{{ selectedInforme.titulo }}</h2>
-            <p>{{ selectedInforme.proyecto }} · {{ selectedInforme.periodo || 'General' }}</p>
-          </div>
-          <button class="btn-close" @click="selectedInforme = null">✕</button>
-        </div>
-
-        <div class="report-modal-content scrollable">
-          <div class="rg-preview-titulo">{{ selectedInforme.contenido?.tituloInforme || selectedInforme.titulo }}</div>
-
-          <div class="report-section" v-if="selectedInforme.contenido?.descripcionGeneral">
-            <label>DESCRIPCIÓN DEL PROYECTO</label>
-            <p>{{ selectedInforme.contenido.descripcionGeneral }}</p>
-          </div>
-
-          <div class="report-section" v-if="selectedInforme.contenido?.objetivos?.length">
-            <label>OBJETIVOS</label>
-            <ul class="client-steps-dots">
-              <li v-for="o in selectedInforme.contenido.objetivos" :key="o">{{ o }}</li>
-            </ul>
-          </div>
-
-          <div class="report-section" v-if="selectedInforme.contenido?.resumenEjecutivo">
-            <label>RESUMEN EJECUTIVO</label>
-            <p class="resumen-text-box">{{ selectedInforme.contenido.resumenEjecutivo }}</p>
-          </div>
-
-          <div class="report-section" v-if="selectedInforme.contenido?.kpis?.length">
-            <label>RESULTADOS Y MÉTRICAS</label>
-            <div class="client-kpi-grid">
-              <div v-for="k in selectedInforme.contenido.kpis" :key="k.label" class="client-kpi-card">
-                <span class="client-kpi-val">{{ k.value }}</span>
-                <span class="client-kpi-label">{{ k.label }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="report-section" v-if="selectedInforme.contenido?.tareas?.length">
-            <label>TRABAJOS REALIZADOS ({{ totalHoras(selectedInforme) }}h totales)</label>
-            <div class="client-tareas-list">
-              <div v-for="t in selectedInforme.contenido.tareas" :key="t.titulo" class="client-tarea-item">
-                <div class="client-tarea-dot" :style="{ background: estadoColor[t.estado || 'Completada'] }"></div>
-                <div class="client-tarea-text">
-                  <strong>{{ t.titulo }}</strong>
-                  <p>{{ t.descripcion }}</p>
-                </div>
-                <div class="client-tarea-hours" v-if="t.horas">{{ t.horas }}h</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="report-section" v-if="selectedInforme.contenido?.imagenesAdjuntas?.length">
-            <label>MATERIAL VISUAL ({{ selectedInforme.contenido.imagenesAdjuntas.length }} imágenes)</label>
-            <div class="client-gallery">
-              <img v-for="img in selectedInforme.contenido.imagenesAdjuntas" :key="img.nombre" :src="img.base64" :alt="img.nombre" />
-            </div>
-          </div>
-
-          <div class="report-double-grid">
-            <div class="report-section" v-if="selectedInforme.contenido?.conclusiones">
-              <label>CONCLUSIONES</label>
-              <p>{{ selectedInforme.contenido.conclusiones }}</p>
-            </div>
-            <div class="report-section" v-if="selectedInforme.contenido?.proximosPasos?.length">
-              <label>PRÓXIMOS PASOS</label>
-              <ol class="client-steps-ordered">
-                <li v-for="step in selectedInforme.contenido.proximosPasos" :key="step">{{ step }}</li>
-              </ol>
-            </div>
-          </div>
-
-          <!-- Archivos adjuntos -->
-          <div class="report-section" v-if="selectedInforme.adjuntos?.length">
-            <label>ARCHIVOS ADJUNTOS</label>
-            <div class="adjuntos-cliente-list">
-              <a
-                v-for="adj in selectedInforme.adjuntos"
-                :key="adj.id"
-                :href="adj.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="adjunto-cliente-item"
-                :download="adj.nombre"
-              >
-                <span class="adj-icon">{{ adj.tipo === 'pdf' ? '📄' : adj.tipo === 'image' ? '🖼️' : '📎' }}</span>
-                <span class="adj-nombre">{{ adj.nombre }}</span>
-                <span v-if="adj.tamanio" class="adj-size">{{ (adj.tamanio / 1024).toFixed(0) }} KB</span>
-                <span class="adj-dl">⬇</span>
-              </a>
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-actions">
-          <a :href="selectedInforme.url_pdf" target="_blank" class="btn-primary">📄 Descargar PDF</a>
-          <button class="btn-text" @click="selectedInforme = null">Cerrar</button>
-        </div>
-      </div>
-    </div>
 
     <div v-if="!loading && !clientData" class="loading-state">No se encontró tu perfil. Contacta con la agencia.</div>
 
