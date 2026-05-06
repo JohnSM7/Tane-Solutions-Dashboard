@@ -170,6 +170,19 @@ const confirmDeleteDoc = async (doc: any) => {
   await deleteDocumento(doc);
 };
 
+const editingDocId = ref<number | null>(null);
+const editingDocNombre = ref('');
+
+const startEditDoc = (doc: any) => { editingDocId.value = doc.id; editingDocNombre.value = doc.nombre; };
+const cancelEditDoc = () => { editingDocId.value = null; };
+const saveDocNombre = async (doc: any) => {
+  const nombre = editingDocNombre.value.trim();
+  if (!nombre) return;
+  await supabase.from('documentos').update({ nombre }).eq('id', doc.id);
+  doc.nombre = nombre;
+  editingDocId.value = null;
+};
+
 // ── Links de cliente ──────────────────────────────────────────────────────────
 import { supabase } from '../supabase';
 
@@ -239,6 +252,22 @@ const deleteLink = async (id: string) => {
   if (!confirm('¿Eliminar este link?')) return;
   await supabase.from('links_cliente').delete().eq('id', id);
   links.value = links.value.filter(l => l.id !== id);
+};
+
+const editingLinkId = ref<string | null>(null);
+const editingLinkForm = ref({ titulo: '', url: '', descripcion: '' });
+
+const startEditLink = (l: LinkCliente) => {
+  editingLinkId.value = l.id;
+  editingLinkForm.value = { titulo: l.titulo, url: l.url, descripcion: l.descripcion ?? '' };
+};
+const cancelEditLink = () => { editingLinkId.value = null; };
+const saveEditLink = async (l: LinkCliente) => {
+  if (!editingLinkForm.value.titulo.trim() || !editingLinkForm.value.url.trim()) return;
+  const updates = { titulo: editingLinkForm.value.titulo.trim(), url: editingLinkForm.value.url.trim(), descripcion: editingLinkForm.value.descripcion.trim() || null };
+  await supabase.from('links_cliente').update(updates).eq('id', l.id);
+  Object.assign(l, updates);
+  editingLinkId.value = null;
 };
 
 loadLinks();
@@ -606,13 +635,25 @@ const formatDate = (iso: string) =>
                 <div class="doc-info">
                   <span class="doc-icon">📄</span>
                   <div class="doc-meta">
-                    <span class="doc-name">{{ doc.nombre }}</span>
+                    <template v-if="editingDocId === doc.id">
+                      <input v-model="editingDocNombre" class="inline-edit-input" @keyup.enter="saveDocNombre(doc)" @keyup.escape="cancelEditDoc" />
+                    </template>
+                    <template v-else>
+                      <span class="doc-name">{{ doc.nombre }}</span>
+                    </template>
                     <span class="doc-details">{{ formatDate(doc.creado_en) }} · {{ doc.subido_por }} · {{ doc.tipo }}</span>
                   </div>
                 </div>
                 <div class="doc-actions">
-                  <button class="btn-icon" title="Descargar" @click="downloadDoc(doc.url, doc.nombre)">⬇️</button>
-                  <button class="btn-icon delete" @click="confirmDeleteDoc(doc)" title="Eliminar">🗑️</button>
+                  <template v-if="editingDocId === doc.id">
+                    <button class="btn-icon" title="Guardar" @click="saveDocNombre(doc)">✅</button>
+                    <button class="btn-icon" title="Cancelar" @click="cancelEditDoc">❌</button>
+                  </template>
+                  <template v-else>
+                    <button class="btn-icon" title="Editar nombre" @click="startEditDoc(doc)">✏️</button>
+                    <button class="btn-icon" title="Descargar" @click="downloadDoc(doc.url, doc.nombre)">⬇️</button>
+                    <button class="btn-icon delete" @click="confirmDeleteDoc(doc)" title="Eliminar">🗑️</button>
+                  </template>
                 </div>
               </li>
             </ul>
@@ -633,18 +674,32 @@ const formatDate = (iso: string) =>
 
             <div v-if="links.length === 0 && !showLinkForm" class="empty-state">Sin links compartidos</div>
             <ul v-else class="docs-list">
-              <li v-for="l in links" :key="l.id" class="doc-item">
-                <div class="doc-info">
+              <li v-for="l in links" :key="l.id" class="doc-item" :class="{ 'doc-item--editing': editingLinkId === l.id }">
+                <div class="doc-info" style="flex:1;min-width:0;">
                   <span class="doc-icon">🔗</span>
-                  <div class="doc-meta">
-                    <span class="doc-name">{{ l.titulo }}</span>
-                    <span v-if="l.descripcion" class="doc-details">{{ l.descripcion }}</span>
-                    <a :href="l.url" target="_blank" rel="noopener" class="link-url">{{ l.url }}</a>
+                  <div class="doc-meta" style="flex:1;min-width:0;">
+                    <template v-if="editingLinkId === l.id">
+                      <input v-model="editingLinkForm.titulo" class="inline-edit-input" placeholder="Título" />
+                      <input v-model="editingLinkForm.url" class="inline-edit-input" placeholder="URL" type="url" />
+                      <input v-model="editingLinkForm.descripcion" class="inline-edit-input" placeholder="Descripción (opcional)" />
+                    </template>
+                    <template v-else>
+                      <span class="doc-name">{{ l.titulo }}</span>
+                      <span v-if="l.descripcion" class="doc-details">{{ l.descripcion }}</span>
+                      <a :href="l.url" target="_blank" rel="noopener" class="link-url">{{ l.url }}</a>
+                    </template>
                   </div>
                 </div>
                 <div class="doc-actions">
-                  <a :href="l.url" target="_blank" rel="noopener" class="btn-icon" title="Abrir">↗️</a>
-                  <button class="btn-icon delete" @click="deleteLink(l.id)" title="Eliminar">🗑️</button>
+                  <template v-if="editingLinkId === l.id">
+                    <button class="btn-icon" title="Guardar" @click="saveEditLink(l)">✅</button>
+                    <button class="btn-icon" title="Cancelar" @click="cancelEditLink">❌</button>
+                  </template>
+                  <template v-else>
+                    <button class="btn-icon" title="Editar" @click="startEditLink(l)">✏️</button>
+                    <a :href="l.url" target="_blank" rel="noopener" class="btn-icon" title="Abrir">↗️</a>
+                    <button class="btn-icon delete" @click="deleteLink(l.id)" title="Eliminar">🗑️</button>
+                  </template>
                 </div>
               </li>
             </ul>
@@ -1179,6 +1234,8 @@ const formatDate = (iso: string) =>
 .upload-hint { font-size: 0.8rem; color: var(--color-text-muted); display: block; margin-top: 0.3rem; }
 .error-msg { color: #ff4444; font-size: 0.85rem; margin-bottom: 0.75rem; }
 .docs-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.inline-edit-input { background: var(--color-bg-dark); color: var(--color-text-light); border: 1px solid var(--color-primary); border-radius: 4px; padding: 0.2rem 0.5rem; font-size: 0.88rem; width: 100%; margin-bottom: 0.25rem; }
+.doc-item--editing { align-items: flex-start; }
 .informe-item { display: flex; flex-direction: column; gap: 0; }
 .doc-item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: var(--color-bg-lighter); border-radius: 8px; }
 .informe-item .doc-item { border-radius: 8px 8px 0 0; }
