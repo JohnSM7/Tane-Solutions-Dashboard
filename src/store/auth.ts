@@ -9,6 +9,7 @@ interface AuthState {
   user: { name: string; email: string; clientId: string | null } | null;
   loading: boolean;
   sessionExpired: boolean;
+  intentionalSignOut: boolean;
 }
 
 export const authStore = reactive<AuthState>({
@@ -17,6 +18,7 @@ export const authStore = reactive<AuthState>({
   user: null,
   loading: true,
   sessionExpired: false,
+  intentionalSignOut: false,
 });
 
 const log = (...args: unknown[]) =>
@@ -49,6 +51,7 @@ export const login = async (email: string, password: string): Promise<void> => {
 };
 
 export const logout = async (): Promise<void> => {
+  authStore.intentionalSignOut = true;
   await supabase.auth.signOut();
   authStore.isAuthenticated = false;
   authStore.role = null;
@@ -111,6 +114,14 @@ export const initAuth = async (): Promise<void> => {
       }
 
     } else if (event === 'SIGNED_OUT') {
+      if (authStore.intentionalSignOut) {
+        log('SIGNED_OUT intencional (logout) — ignorando debounce');
+        authStore.intentionalSignOut = false;
+        authStore.isAuthenticated = false;
+        authStore.role = null;
+        authStore.user = null;
+        return;
+      }
       wasAuthenticatedOnSignOut = authStore.isAuthenticated;
       log(`SIGNED_OUT — wasAuthenticated: ${wasAuthenticatedOnSignOut} — esperando 8s para comprobar rotación`);
 
