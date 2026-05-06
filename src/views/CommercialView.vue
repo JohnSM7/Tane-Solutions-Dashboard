@@ -20,12 +20,12 @@ const exportLeads = () => exportCsv('leads.csv', leads.value.map(l => ({
   'Fecha creación': (l as any).created_at?.slice(0, 10) ?? '',
 })));
 
-// ── Modal preview propuesta ──────────────────────────────────────────────────
-const previewLead = ref<Lead | null>(null);
+// ── Modal detalle lead ────────────────────────────────────────────────────────
+const detailLead = ref<Lead | null>(null);
 
-const openPreview = (lead: Lead) => { previewLead.value = lead; };
-const closePreview = () => { previewLead.value = null; };
-const openEditFromPreview = (lead: Lead) => { closePreview(); openEdit(lead); };
+const openDetail = (lead: Lead) => { detailLead.value = lead; };
+const closeDetail = () => { detailLead.value = null; };
+const openEditFromDetail = (lead: Lead) => { closeDetail(); openEdit(lead); };
 
 // ── Modal nuevo/editar lead ──────────────────────────────────────────────────
 const showModal = ref(false);
@@ -297,7 +297,7 @@ const formatDate = (iso: string) =>
             <tbody>
               <tr v-for="lead in filteredLeads" :key="lead.id">
                 <td>
-                  <div class="cell-stack">
+                  <div class="cell-stack cell-stack--link" @click="openDetail(lead)">
                     <strong>{{ lead.nombre }}</strong>
                     <span class="muted">{{ lead.empresa }}</span>
                   </div>
@@ -318,7 +318,7 @@ const formatDate = (iso: string) =>
                 <td class="muted">{{ formatDate(lead.fecha_creacion) }}</td>
                 <td>
                   <div class="row-actions">
-                    <button v-if="lead.link_canva" class="btn-icon-text" title="Ver propuesta" @click="openPreview(lead)">🔗</button>
+                    <a v-if="lead.link_canva" :href="lead.link_canva" target="_blank" rel="noopener noreferrer" class="btn-icon-text" title="Ver propuesta">🔗</a>
                     <button class="btn-icon-text" @click="openEdit(lead)">✏️</button>
                     <button class="btn-icon-text danger" @click="confirmDelete(lead)">🗑️</button>
                   </div>
@@ -330,30 +330,65 @@ const formatDate = (iso: string) =>
       </DashboardCard>
     </template>
 
-    <!-- Modal: Preview propuesta -->
-    <div class="modal-overlay" v-if="previewLead" @click.self="closePreview">
-      <div class="modal-box modal-box--preview">
-        <div class="preview-header">
+    <!-- Modal: Detalle lead -->
+    <div class="modal-overlay" v-if="detailLead" @click.self="closeDetail">
+      <div class="modal-box">
+        <div class="detail-header">
           <div>
-            <p class="modal-title" style="margin-bottom:0.25rem;">{{ previewLead.empresa || previewLead.nombre }}</p>
-            <span class="muted">{{ previewLead.servicio }}</span>
+            <p class="modal-title" style="margin-bottom:0.25rem;">{{ detailLead.nombre }}</p>
+            <span v-if="detailLead.empresa" class="muted">{{ detailLead.empresa }}</span>
           </div>
-          <div class="preview-header-actions">
-            <button class="btn-primary-sm" @click="openEditFromPreview(previewLead)">✏️ Editar lead</button>
-            <button class="btn-icon-text" @click="closePreview" title="Cerrar">✕</button>
+          <button class="btn-icon-text" @click="closeDetail" title="Cerrar">✕</button>
+        </div>
+
+        <div class="detail-grid">
+          <div class="detail-item" v-if="detailLead.email">
+            <span class="detail-label">Email</span>
+            <span class="detail-value">{{ detailLead.email }}</span>
+          </div>
+          <div class="detail-item" v-if="detailLead.telefono">
+            <span class="detail-label">Teléfono</span>
+            <span class="detail-value">{{ detailLead.telefono }}</span>
+          </div>
+          <div class="detail-item" v-if="detailLead.servicio">
+            <span class="detail-label">Servicio</span>
+            <span class="detail-value">{{ detailLead.servicio }}</span>
+          </div>
+          <div class="detail-item" v-if="detailLead.fuente">
+            <span class="detail-label">Fuente</span>
+            <span class="detail-value">{{ detailLead.fuente }}</span>
+          </div>
+          <div class="detail-item" v-if="detailLead.valor_estimado">
+            <span class="detail-label">Valor estimado</span>
+            <span class="detail-value">{{ detailLead.valor_estimado.toLocaleString('es-ES') }} €</span>
+          </div>
+          <div class="detail-item" v-if="detailLead.cac">
+            <span class="detail-label">CAC</span>
+            <span class="detail-value">{{ detailLead.cac }} €</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Estado</span>
+            <span class="detail-value" :style="{ color: ESTADO_COLORS[detailLead.estado] }">{{ detailLead.estado }}</span>
+          </div>
+          <div class="detail-item" v-if="detailLead.fecha_creacion">
+            <span class="detail-label">Fecha</span>
+            <span class="detail-value">{{ formatDate(detailLead.fecha_creacion) }}</span>
           </div>
         </div>
 
-        <div class="preview-iframe-wrap">
-          <iframe :src="previewLead.link_canva!" class="preview-iframe" sandbox="allow-scripts allow-same-origin allow-popups" allowfullscreen></iframe>
-          <div class="preview-iframe-fallback">
-            <p>La vista previa no está disponible en este navegador.</p>
-            <a :href="previewLead.link_canva!" target="_blank" rel="noopener noreferrer" class="btn-primary-sm">Abrir enlace ↗</a>
-          </div>
+        <div v-if="detailLead.notas" class="detail-notas">
+          <span class="detail-label">Notas</span>
+          <p class="detail-notas-text">{{ detailLead.notas }}</p>
         </div>
 
-        <div class="preview-footer">
-          <a :href="previewLead.link_canva!" target="_blank" rel="noopener noreferrer" class="btn-outline-sm">Abrir en nueva pestaña ↗</a>
+        <div v-if="detailLead.link_canva" class="detail-propuesta">
+          <span class="detail-label">Propuesta</span>
+          <a :href="detailLead.link_canva" target="_blank" rel="noopener noreferrer" class="detail-link">🔗 Ver propuesta ↗</a>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn-text" @click="closeDetail">Cerrar</button>
+          <button class="btn-primary" @click="openEditFromDetail(detailLead)">✏️ Editar lead</button>
         </div>
       </div>
     </div>
@@ -516,14 +551,19 @@ const formatDate = (iso: string) =>
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 1000; }
 .modal-box { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 12px; padding: 2rem; width: 90%; max-width: 560px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; overflow-x: hidden; }
 
-/* Preview modal */
-.modal-box--preview { max-width: 900px; width: 95vw; max-height: 92vh; display: flex; flex-direction: column; padding: 1.5rem; }
-.preview-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1rem; }
-.preview-header-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
-.preview-iframe-wrap { position: relative; flex: 1; min-height: 0; border-radius: 8px; overflow: hidden; background: var(--color-bg-dark); }
-.preview-iframe { width: 100%; height: 65vh; border: none; display: block; }
-.preview-iframe-fallback { display: none; }
-.preview-footer { margin-top: 1rem; display: flex; justify-content: flex-end; }
+/* Detail modal */
+.detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1.5rem; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem 1.5rem; margin-bottom: 1.25rem; }
+.detail-item { display: flex; flex-direction: column; gap: 0.2rem; }
+.detail-label { font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.detail-value { font-size: 0.95rem; color: var(--color-text-light); }
+.detail-notas { margin-bottom: 1rem; }
+.detail-notas-text { margin: 0.4rem 0 0; font-size: 0.9rem; color: var(--color-text-light); line-height: 1.5; white-space: pre-wrap; }
+.detail-propuesta { margin-bottom: 0.5rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.detail-link { color: var(--color-primary); font-size: 0.95rem; text-decoration: none; }
+.detail-link:hover { text-decoration: underline; }
+.cell-stack--link { cursor: pointer; }
+.cell-stack--link:hover strong { color: var(--color-primary); }
 @media (max-width: 600px) { .form-row { flex-direction: column; } }
 .modal-title { font-size: 1.2rem; font-weight: 700; margin: 0 0 1.5rem; color: var(--color-text-light); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--color-border); }
