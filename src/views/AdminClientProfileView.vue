@@ -588,7 +588,11 @@ const formatDate = (iso: string) =>
 
           <!-- Documentos -->
           <DashboardCard title="Gestor de Documentos">
-            <div class="upload-area" @click="triggerUpload" :class="{ uploading }">
+            <div v-if="selectedSedeId === 'all'" class="upload-area upload-area--disabled">
+              <div class="upload-icon">📁</div>
+              <p>Selecciona una sede para subir documentos</p>
+            </div>
+            <div v-else class="upload-area" @click="triggerUpload" :class="{ uploading }">
               <input ref="fileInput" type="file" class="hidden-input" @change="handleFileChange" />
               <div class="upload-icon">{{ uploading ? '⏳' : '⬆️' }}</div>
               <p>{{ uploading ? 'Subiendo...' : 'Haz clic para subir un documento' }}</p>
@@ -1166,6 +1170,8 @@ const formatDate = (iso: string) =>
 /* Docs */
 .upload-area { border: 2px dashed var(--color-border); padding: 1.5rem; text-align: center; border-radius: 8px; margin-bottom: 1rem; cursor: pointer; transition: all 0.2s; }
 .upload-area:hover, .upload-area.uploading { border-color: var(--color-primary); background: rgba(227,255,4,0.03); }
+.upload-area--disabled { cursor: default; opacity: 0.5; }
+.upload-area--disabled:hover { border-color: var(--color-border); background: none; }
 .link-form { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1rem; padding: 1rem; background: var(--color-bg-lighter); border-radius: 8px; border: 1px solid var(--color-border); }
 .link-url { font-size: 0.78rem; color: var(--color-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
 .hidden-input { display: none; }
