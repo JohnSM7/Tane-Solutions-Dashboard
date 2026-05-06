@@ -209,7 +209,7 @@ export function useClientProfile(clientId: string) {
 
   Promise.all([
     supabase.from('clientes').select('*').eq('id', clientId).single(),
-    supabase.from('facturas').select('*').eq('cliente_id', clientId).order('fecha_emision', { ascending: false }),
+    supabase.from('facturas').select('*, proyectos_rentabilidad(nombre)').eq('cliente_id', clientId).order('fecha_emision', { ascending: false }),
     supabase.from('proyectos').select('*, sedes(nombre)').eq('cliente_id', clientId).order('fecha_inicio', { ascending: false }),
     supabase.from('sedes').select('*').eq('cliente_id', clientId).order('id'),
     supabase.from('documentos').select('*').eq('cliente_id', clientId).order('creado_en', { ascending: false }),

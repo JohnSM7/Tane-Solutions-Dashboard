@@ -14,7 +14,7 @@ import { useToast } from '../composables/useToast';
 const clientId = authStore.user?.clientId ?? '';
 const {
   clientData, proyectos, sedes, documentos, facturas,
-  financials, loading,
+  loading,
   uploadDocumento, saveProfile,
 } = useClientProfile(clientId);
 
@@ -47,6 +47,18 @@ const filteredDocumentos = computed(() => {
 const filteredSedes = computed(() => {
   if (selectedSedeId.value === 'all') return sedes.value;
   return sedes.value.filter(s => s.id === selectedSedeId.value);
+});
+
+// ── Facturas agrupadas por proyecto ──────────────────────────────────────────
+const facturasAgrupadas = computed(() => {
+  const grupos = new Map<string, { nombre: string; facturas: Factura[] }>();
+  for (const f of facturas.value) {
+    const key = f.proyecto_id ?? '__sin_proyecto__';
+    const nombre = (f as any).proyectos_rentabilidad?.nombre ?? (f.proyecto_id ? 'Proyecto' : 'Otras facturas');
+    if (!grupos.has(key)) grupos.set(key, { nombre, facturas: [] });
+    grupos.get(key)!.facturas.push(f);
+  }
+  return [...grupos.values()];
 });
 
 // ── Banner de estado ──────────────────────────────────────────────────────────
@@ -254,48 +266,29 @@ const estadoColor: Record<string, string> = {
         </button>
       </div>
 
-      <!-- Resumen financiero (sólo visible en "todas las sedes") -->
-      <div v-if="selectedSedeId === 'all'" class="fin-section">
-        <div class="fin-summary">
-          <div class="fin-box success">
-            <span class="fin-label">Abonado</span>
-            <span class="fin-value">{{ financials.paid }}</span>
-          </div>
-          <div class="fin-box warning">
-            <span class="fin-label">Por pagar</span>
-            <span class="fin-value">{{ financials.pending }}</span>
-          </div>
-          <div class="fin-box neutral">
-            <span class="fin-label">Total facturado</span>
-            <span class="fin-value">{{ financials.total }}</span>
-          </div>
-        </div>
-
-        <!-- Lista de facturas con descarga PDF -->
-        <div v-if="facturas.length > 0" class="facturas-cliente">
-          <div v-for="f in facturas" :key="f.id" class="factura-row-cliente">
-            <div class="factura-info">
-              <span class="factura-num">{{ f.numero_factura ?? 'Borrador' }}</span>
-              <span class="factura-concepto">{{ f.concepto }}</span>
-              <span class="factura-importe">{{ f.importe.toLocaleString('es-ES') }} €</span>
-            </div>
-            <div class="factura-right-cliente">
-              <span
-                class="factura-estado-badge"
-                :class="f.estado.toLowerCase()"
-              >{{ f.estado }}</span>
-              <button
-                class="btn-pdf-cliente"
-                :disabled="downloadingInvoice === f.id"
-                @click="downloadInvoicePdf(f)"
-                title="Descargar PDF"
-              >
-                {{ downloadingInvoice === f.id ? '⏳' : '⬇' }} PDF
-              </button>
+      <!-- Facturas por proyecto -->
+      <DashboardCard v-if="facturasAgrupadas.length > 0" title="Facturas">
+        <div class="facturas-grupos">
+          <div v-for="grupo in facturasAgrupadas" :key="grupo.nombre" class="facturas-grupo">
+            <p class="facturas-grupo-titulo">{{ grupo.nombre }}</p>
+            <div v-for="f in grupo.facturas" :key="f.id" class="factura-row-cliente">
+              <div class="factura-info">
+                <span class="factura-num">{{ f.numero_factura ?? 'Borrador' }}</span>
+                <span class="factura-concepto">{{ f.concepto }}</span>
+              </div>
+              <div class="factura-right-cliente">
+                <span class="factura-estado-badge" :class="f.estado.toLowerCase()">{{ f.estado }}</span>
+                <button
+                  class="btn-pdf-cliente"
+                  :disabled="downloadingInvoice === f.id"
+                  @click="downloadInvoicePdf(f)"
+                  title="Descargar PDF"
+                >{{ downloadingInvoice === f.id ? '⏳' : '⬇ PDF' }}</button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </DashboardCard>
 
       <div class="content-grid">
         <!-- Proyectos -->
@@ -634,27 +627,23 @@ const estadoColor: Record<string, string> = {
 }
 .btn-soporte-banner:hover { background: rgba(255,255,255,0.1); }
 
-/* ── Financial section ─── */
-.fin-section { display: flex; flex-direction: column; gap: 1rem; }
-.fin-summary { display: flex; gap: 1rem; }
-.fin-box { flex: 1; background: var(--color-bg-card); border: 1px solid transparent; padding: 1.25rem; border-radius: 10px; display: flex; flex-direction: column; align-items: center; text-align: center; }
-.fin-box.success { border-color: rgba(74,222,128,0.3); color: #4ade80; }
-.fin-box.warning { border-color: rgba(250,204,21,0.3); color: #facc15; }
-.fin-box.neutral { border-color: var(--color-border); }
-.fin-label { font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 0.4rem; }
-.fin-value { font-size: 1.6rem; font-weight: 700; }
-
-/* ── Facturas cliente ─── */
-.facturas-cliente { display: flex; flex-direction: column; gap: 0.5rem; }
+/* ── Facturas por proyecto ─── */
+.facturas-grupos { display: flex; flex-direction: column; gap: 1.25rem; }
+.facturas-grupo { display: flex; flex-direction: column; gap: 0.4rem; }
+.facturas-grupo-titulo {
+  font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--color-text-muted);
+  margin-bottom: 0.2rem; padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--color-border);
+}
 .factura-row-cliente {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: 0.7rem 1rem; background: var(--color-bg-card);
+  padding: 0.65rem 0.9rem; background: rgba(255,255,255,0.02);
   border: 1px solid var(--color-border); border-radius: 8px; flex-wrap: wrap;
 }
 .factura-info { display: flex; align-items: center; gap: 0.75rem; flex: 1; min-width: 0; flex-wrap: wrap; }
 .factura-num { font-family: monospace; font-size: 0.8rem; color: var(--color-primary); font-weight: 700; white-space: nowrap; }
 .factura-concepto { font-size: 0.88rem; color: var(--color-text-light); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 80px; }
-.factura-importe { font-weight: 700; font-size: 0.9rem; white-space: nowrap; }
 .factura-right-cliente { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
 .factura-estado-badge {
   font-size: 0.72rem; font-weight: 700; padding: 0.2rem 0.5rem;
@@ -677,7 +666,6 @@ const estadoColor: Record<string, string> = {
 .content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
 @media (max-width: 900px) {
   .content-grid { grid-template-columns: 1fr; }
-  .fin-summary { flex-direction: column; }
   .welcome-header { flex-direction: column-reverse; align-items: flex-start; }
 }
 
