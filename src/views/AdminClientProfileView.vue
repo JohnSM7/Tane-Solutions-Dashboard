@@ -346,7 +346,7 @@ const confirmarSubirInforme = async () => {
       url_pdf: urlData.publicUrl,
       storage_path: path,
       generado_por: 'admin',
-    }).select('*, informe_adjuntos(*)').single();
+    }).select('*').single();
 
     if (error) throw error;
     informesGuardados.value.unshift(data as any);

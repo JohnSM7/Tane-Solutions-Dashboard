@@ -303,7 +303,7 @@ export async function guardarInforme(informe: InformeProyecto, clienteId: string
 export async function listarInformes(clienteId: string): Promise<InformeGuardado[]> {
   const { data, error } = await supabase
     .from('informes')
-    .select('*, informe_adjuntos(*)')
+    .select('*')
     .eq('cliente_id', clienteId)
     .order('creado_en', { ascending: false });
   if (error) throw error;
