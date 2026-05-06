@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import DashboardCard from './DashboardCard.vue';
+import { supabase } from '../supabase';
 import {
   useClientReports, generateReportPDF,
   type Informe, type ArchivoNas, type TipoArchivo,
@@ -193,6 +194,7 @@ const TIPO_COLORS: Record<TipoArchivo, string> = {
 };
 
 const formatPeriod = (informe: Informe): string => {
+  if (informe.periodo) return informe.periodo;
   const from = informe.periodo_inicio
     ? new Date(informe.periodo_inicio).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: '2-digit' })
     : null;
@@ -205,18 +207,73 @@ const formatPeriod = (informe: Informe): string => {
   return '';
 };
 
-const formatCreatedAt = (iso: string): string =>
-  new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+const formatCreatedAt = (iso: string | null | undefined): string => {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const getCreatedAt = (informe: Informe): string =>
+  formatCreatedAt(informe.creado_en ?? informe.created_at);
+
+// ── Subir informe manual ──────────────────────────────────────────────────────
+const showUploadModal  = ref(false);
+const uploadingManual  = ref(false);
+const uploadForm       = ref({ titulo: '', proyecto: '', periodo: '' });
+const uploadFile       = ref<File | null>(null);
+const uploadInput      = ref<HTMLInputElement | null>(null);
+
+const openUploadModal = () => {
+  uploadForm.value = { titulo: '', proyecto: '', periodo: '' };
+  uploadFile.value = null;
+  showUploadModal.value = true;
+};
+
+const handleUploadFile = (e: Event) => {
+  const f = (e.target as HTMLInputElement).files?.[0] ?? null;
+  uploadFile.value = f;
+  if (f && !uploadForm.value.titulo) uploadForm.value.titulo = f.name.replace(/\.[^.]+$/, '');
+};
+
+const confirmarUpload = async () => {
+  if (!uploadFile.value || !uploadForm.value.titulo.trim()) return;
+  uploadingManual.value = true;
+  try {
+    const file = uploadFile.value;
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 80);
+    const path = `${props.clientId}/${Date.now()}_${safeName}`;
+    const { error: upErr } = await supabase.storage.from('informes').upload(path, file, { upsert: false });
+    if (upErr) throw upErr;
+    const { data: urlData } = supabase.storage.from('informes').getPublicUrl(path);
+    const { data, error: dbErr } = await supabase.from('informes').insert({
+      cliente_id: props.clientId,
+      titulo: uploadForm.value.titulo.trim(),
+      proyecto: uploadForm.value.proyecto.trim() || '',
+      periodo: uploadForm.value.periodo.trim() || '',
+      url_pdf: urlData.publicUrl,
+      storage_path: path,
+      generado_por: 'admin',
+    }).select('*').single();
+    if (dbErr) throw dbErr;
+    informes.value.unshift(data as Informe);
+    showUploadModal.value = false;
+  } catch (err: any) {
+    alert('Error al subir el informe: ' + (err?.message ?? ''));
+  } finally {
+    uploadingManual.value = false;
+    if (uploadInput.value) uploadInput.value.value = '';
+  }
+};
 </script>
 
 <template>
   <DashboardCard title="Informes de Trabajo">
 
-    <!-- Slot: botón nuevo informe (solo admin) -->
+    <!-- Slot: botones de admin -->
     <template #actions>
-      <button v-if="isAdmin" class="btn-new-report" @click="openCreate">
-        + Nuevo Informe
-      </button>
+      <template v-if="isAdmin">
+        <button class="btn-new-report btn-upload-report" @click="openUploadModal">⬆ Subir informe</button>
+        <button class="btn-new-report" @click="openCreate">+ Nuevo Informe</button>
+      </template>
     </template>
 
     <!-- Estado de carga -->
@@ -248,7 +305,8 @@ const formatCreatedAt = (iso: string): string =>
               <h4 class="rm-title">{{ informe.titulo }}</h4>
               <div class="rm-meta">
                 <span v-if="formatPeriod(informe)" class="rm-period">{{ formatPeriod(informe) }}</span>
-                <span class="rm-date">Creado: {{ formatCreatedAt(informe.created_at) }}</span>
+                <span v-if="informe.proyecto" class="rm-period">{{ informe.proyecto }}</span>
+                <span class="rm-date">{{ getCreatedAt(informe) }}</span>
                 <span v-if="informe.creado_por" class="rm-author">por {{ informe.creado_por }}</span>
               </div>
             </div>
@@ -260,13 +318,17 @@ const formatCreatedAt = (iso: string): string =>
               {{ informe.archivos.length }} archivo{{ informe.archivos.length !== 1 ? 's' : '' }}
             </span>
 
-            <!-- Descargar PDF -->
+            <!-- Ver/Descargar PDF -->
+            <a v-if="informe.url_pdf" :href="informe.url_pdf" target="_blank" rel="noopener" class="btn-pdf" title="Ver PDF">
+              <span>⬇</span> PDF
+            </a>
             <button
+              v-else
               class="btn-pdf"
               :class="{ loading: generatingPdf === informe.id }"
               @click="downloadPdf(informe)"
               :disabled="generatingPdf === informe.id"
-              title="Descargar informe en PDF"
+              title="Generar PDF"
             >
               <span>{{ generatingPdf === informe.id ? '⏳' : '⬇' }}</span>
               PDF
@@ -459,6 +521,37 @@ const formatCreatedAt = (iso: string): string =>
     </div>
 
   </DashboardCard>
+
+  <!-- Modal: Subir informe manual -->
+  <div class="modal-overlay" v-if="showUploadModal">
+    <div class="modal-box">
+      <p class="modal-title">Subir Informe</p>
+      <div class="form-group">
+        <label>Archivo *</label>
+        <input ref="uploadInput" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx" class="form-input" @change="handleUploadFile" />
+      </div>
+      <div class="form-group">
+        <label>Título *</label>
+        <input v-model="uploadForm.titulo" class="form-input" placeholder="Ej: Informe mensual mayo 2026" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Proyecto</label>
+          <input v-model="uploadForm.proyecto" class="form-input" placeholder="Ej: Web Corporativa" />
+        </div>
+        <div class="form-group">
+          <label>Período</label>
+          <input v-model="uploadForm.periodo" class="form-input" placeholder="Ej: Mayo 2026" />
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-text" @click="showUploadModal = false">Cancelar</button>
+        <button class="btn-primary" @click="confirmarUpload" :disabled="uploadingManual || !uploadFile || !uploadForm.titulo.trim()">
+          {{ uploadingManual ? 'Subiendo...' : 'Subir informe' }}
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <style scoped>
@@ -493,6 +586,23 @@ const formatCreatedAt = (iso: string): string =>
   transition: opacity 0.2s;
 }
 .btn-new-report:hover { opacity: 0.85; }
+.btn-upload-report { background: transparent; border: 1px solid var(--color-border); color: var(--color-text-light); margin-right: 0.5rem; }
+.btn-upload-report:hover { border-color: var(--color-primary); color: var(--color-primary); opacity: 1; }
+
+/* ── Modal ───────────────────────────────────────────────────────────────────*/
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+.modal-box { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 12px; padding: 2rem; width: 90%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+.modal-title { font-size: 1.1rem; font-weight: 700; margin: 0 0 1.25rem; color: var(--color-text-light); }
+.form-group { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
+.form-group label { font-size: 0.82rem; font-weight: 600; color: var(--color-text-muted); }
+.form-row { display: flex; gap: 0.75rem; }
+.form-row .form-group { flex: 1; }
+.form-input { background: var(--color-bg-lighter); border: 1px solid var(--color-border); color: var(--color-text-light); padding: 0.7rem 0.9rem; border-radius: 6px; font-family: inherit; font-size: 0.9rem; outline: none; width: 100%; box-sizing: border-box; color-scheme: dark; }
+.form-input:focus { border-color: var(--color-primary); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--color-border); }
+.btn-primary { background: var(--color-primary); color: #000; font-weight: 700; border: none; border-radius: 6px; padding: 0.55rem 1.2rem; cursor: pointer; font-size: 0.9rem; }
+.btn-primary:disabled { opacity: 0.5; cursor: default; }
+.btn-text { background: transparent; border: none; color: var(--color-primary); cursor: pointer; font-size: 0.9rem; }
 
 /* ── Lista de informes ───────────────────────────────────────────────────────*/
 .rm-list {

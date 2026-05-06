@@ -26,8 +26,14 @@ export type Informe = {
   resumen_trabajo: string | null;
   periodo_inicio: string | null;
   periodo_fin: string | null;
+  periodo: string | null;
+  proyecto: string | null;
   creado_por: string | null;
-  created_at: string;
+  generado_por: string | null;
+  url_pdf: string | null;
+  storage_path: string | null;
+  created_at: string | null;
+  creado_en: string | null;
   archivos?: ArchivoNas[];
 };
 
@@ -67,16 +73,13 @@ export function useClientReports(clientId: string) {
     loading.value = true;
     const { data, error: err } = await supabase
       .from('informes')
-      .select('*, archivos:informe_archivos_nas(*)')
+      .select('*')
       .eq('cliente_id', clientId)
-      .order('created_at', { ascending: false });
+      .order('creado_en', { ascending: false });
 
     if (err) { error.value = err.message; }
     else {
-      informes.value = ((data ?? []) as Informe[]).map(i => ({
-        ...i,
-        archivos: (i.archivos ?? []).sort((a: ArchivoNas, b: ArchivoNas) => a.orden - b.orden),
-      }));
+      informes.value = (data ?? []) as Informe[];
     }
     loading.value = false;
   };
