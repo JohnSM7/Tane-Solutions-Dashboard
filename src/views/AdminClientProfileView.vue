@@ -48,7 +48,7 @@ const filteredProyectos = computed(() => {
 });
 
 const filteredDocumentos = computed(() => {
-  if (selectedSedeId.value === 'all') return null; // null = no sede selected
+  if (selectedSedeId.value === 'all') return documentos.value.filter((d: any) => d.sede_id === null);
   return documentos.value.filter((d: any) => d.sede_id === selectedSedeId.value);
 });
 
@@ -172,14 +172,17 @@ const confirmDeleteDoc = async (doc: any) => {
 
 const editingDocId = ref<number | null>(null);
 const editingDocNombre = ref('');
+const editingDocSedeId = ref<number | null>(null);
 
-const startEditDoc = (doc: any) => { editingDocId.value = doc.id; editingDocNombre.value = doc.nombre; };
+const startEditDoc = (doc: any) => { editingDocId.value = doc.id; editingDocNombre.value = doc.nombre; editingDocSedeId.value = doc.sede_id; };
 const cancelEditDoc = () => { editingDocId.value = null; };
 const saveDocNombre = async (doc: any) => {
   const nombre = editingDocNombre.value.trim();
   if (!nombre) return;
-  await supabase.from('documentos').update({ nombre }).eq('id', doc.id);
+  const updates: any = { nombre, sede_id: editingDocSedeId.value };
+  await supabase.from('documentos').update(updates).eq('id', doc.id);
   doc.nombre = nombre;
+  doc.sede_id = editingDocSedeId.value;
   editingDocId.value = null;
 };
 
@@ -629,15 +632,20 @@ const formatDate = (iso: string) =>
             </div>
             <p v-if="uploadError" class="error-msg">{{ uploadError }}</p>
 
-            <div v-if="filteredDocumentos === null" class="empty-state">Selecciona una sede para ver sus documentos</div>
-            <div v-else-if="filteredDocumentos.length === 0" class="empty-state">Sin documentos en esta sede</div>
-            <ul v-else class="docs-list">
-              <li v-for="doc in filteredDocumentos" :key="doc.id" class="doc-item">
+            <div v-if="selectedSedeId === 'all' && filteredDocumentos.length === 0" class="empty-state">Sin documentos sin sede asignada</div>
+            <div v-else-if="selectedSedeId !== 'all' && filteredDocumentos.length === 0" class="empty-state">Sin documentos en esta sede</div>
+            <p v-if="selectedSedeId === 'all' && filteredDocumentos.length > 0" class="docs-warning">⚠️ Estos documentos no tienen sede asignada. Edítalos para asignarlos a una sede.</p>
+            <ul v-if="filteredDocumentos.length > 0" class="docs-list">
+              <li v-for="doc in filteredDocumentos" :key="doc.id" class="doc-item" :class="{ 'doc-item--editing': editingDocId === doc.id }">
                 <div class="doc-info">
                   <span class="doc-icon">📄</span>
                   <div class="doc-meta">
                     <template v-if="editingDocId === doc.id">
-                      <input v-model="editingDocNombre" class="inline-edit-input" @keyup.enter="saveDocNombre(doc)" @keyup.escape="cancelEditDoc" />
+                      <input v-model="editingDocNombre" class="inline-edit-input" @keyup.enter="saveDocNombre(doc)" @keyup.escape="cancelEditDoc" placeholder="Nombre del documento" />
+                      <select v-model="editingDocSedeId" class="inline-edit-input">
+                        <option :value="null">Sin sede</option>
+                        <option v-for="s in sedes" :key="s.id" :value="s.id">{{ s.nombre }}</option>
+                      </select>
                     </template>
                     <template v-else>
                       <span class="doc-name">{{ doc.nombre }}</span>
@@ -1236,6 +1244,7 @@ const formatDate = (iso: string) =>
 .upload-hint { font-size: 0.8rem; color: var(--color-text-muted); display: block; margin-top: 0.3rem; }
 .error-msg { color: #ff4444; font-size: 0.85rem; margin-bottom: 0.75rem; }
 .docs-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.docs-warning { font-size: 0.82rem; color: #f59e0b; margin: 0 0 0.75rem; }
 .inline-edit-input { background: var(--color-bg-dark); color: var(--color-text-light); border: 1px solid var(--color-primary); border-radius: 4px; padding: 0.2rem 0.5rem; font-size: 0.88rem; width: 100%; margin-bottom: 0.25rem; }
 .doc-item--editing { align-items: flex-start; }
 .informe-item { display: flex; flex-direction: column; gap: 0; }
