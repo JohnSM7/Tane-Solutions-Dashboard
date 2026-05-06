@@ -48,8 +48,7 @@ const filteredProyectos = computed(() => {
 });
 
 const filteredDocumentos = computed(() => {
-  if (!documentos.value.length) return [];
-  if (selectedSedeId.value === 'all') return documentos.value;
+  if (selectedSedeId.value === 'all') return null; // null = no sede selected
   return documentos.value.filter((d: any) => d.sede_id === selectedSedeId.value);
 });
 
@@ -629,7 +628,8 @@ const formatDate = (iso: string) =>
             </div>
             <p v-if="uploadError" class="error-msg">{{ uploadError }}</p>
 
-            <div v-if="filteredDocumentos.length === 0" class="empty-state">Sin documentos</div>
+            <div v-if="filteredDocumentos === null" class="empty-state">Selecciona una sede para ver sus documentos</div>
+            <div v-else-if="filteredDocumentos.length === 0" class="empty-state">Sin documentos en esta sede</div>
             <ul v-else class="docs-list">
               <li v-for="doc in filteredDocumentos" :key="doc.id" class="doc-item">
                 <div class="doc-info">
