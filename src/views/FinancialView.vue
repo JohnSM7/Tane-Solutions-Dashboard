@@ -478,6 +478,25 @@ supabase.from('leads').select('cliente_id, cac').eq('estado', 'Cerrado-Ganado').
   cacPorCliente.value = map;
 });
 
+// ── Filtro de fechas para rentabilidad ───────────────────────────────────────
+const rentPeriodo = ref<'1m' | '3m' | '6m' | '1y' | 'custom'>('1y');
+const rentDesde = ref('');
+const rentHasta = ref('');
+
+function rentFechaLimite(): { desde: string; hasta: string } {
+  const hoy = new Date();
+  const fmt = (d: Date) => d.toISOString().split('T')[0]!;
+  if (rentPeriodo.value === 'custom') {
+    return { desde: rentDesde.value, hasta: rentHasta.value || fmt(hoy) };
+  }
+  const desde = new Date(hoy);
+  if (rentPeriodo.value === '1m')  desde.setMonth(hoy.getMonth() - 1);
+  if (rentPeriodo.value === '3m')  desde.setMonth(hoy.getMonth() - 3);
+  if (rentPeriodo.value === '6m')  desde.setMonth(hoy.getMonth() - 6);
+  if (rentPeriodo.value === '1y')  desde.setFullYear(hoy.getFullYear() - 1);
+  return { desde: fmt(desde), hasta: fmt(hoy) };
+}
+
 // ── Rentabilidad por cliente ──────────────────────────────────────────────────
 const rentabilidadClientes = computed(() => {
   const map = new Map<string, {
@@ -497,7 +516,13 @@ const rentabilidadClientes = computed(() => {
     }
   }
 
+  const { desde, hasta } = rentFechaLimite();
+
   for (const f of facturas.value) {
+    // Filtro por rango de fechas (fecha_emision)
+    if (desde && f.fecha_emision < desde) continue;
+    if (hasta && f.fecha_emision > hasta) continue;
+
     // Use direct cliente_id; fall back to the linked project's cliente_id
     const clienteId = f.cliente_id
       ?? (f.proyecto_id ? (proyectoClienteMap.get(f.proyecto_id) ?? null) : null);
@@ -855,8 +880,25 @@ const rentabilidadClientes = computed(() => {
       <!-- RENTABILIDAD POR CLIENTE                                            -->
       <!-- ═══════════════════════════════════════════════════════════════════ -->
       <DashboardCard title="Rentabilidad por Cliente">
+        <div class="rent-filters">
+          <div class="rent-periodo-btns">
+            <button
+              v-for="p in ([['1m','1 mes'],['3m','3 meses'],['6m','6 meses'],['1y','1 año']] as const)"
+              :key="p[0]"
+              class="periodo-btn"
+              :class="{ active: rentPeriodo === p[0] }"
+              @click="rentPeriodo = p[0]"
+            >{{ p[1] }}</button>
+            <button class="periodo-btn" :class="{ active: rentPeriodo === 'custom' }" @click="rentPeriodo = 'custom'">Personalizado</button>
+          </div>
+          <div v-if="rentPeriodo === 'custom'" class="rent-custom-range">
+            <input type="date" v-model="rentDesde" class="form-input rent-date-input" />
+            <span class="rent-range-sep">—</span>
+            <input type="date" v-model="rentHasta" class="form-input rent-date-input" />
+          </div>
+        </div>
         <div v-if="rentabilidadClientes.length === 0" class="empty-state">
-          Sin datos de clientes para mostrar.
+          Sin datos para el periodo seleccionado.
         </div>
         <div v-else class="rent-table">
           <div class="rent-header">
@@ -866,6 +908,7 @@ const rentabilidadClientes = computed(() => {
             <span class="ta-r">Pendiente</span>
             <span class="ta-r">Coste</span>
             <span class="ta-r">CAC</span>
+            <span class="ta-r">Neto</span>
             <span class="ta-r">Margen</span>
           </div>
           <div v-for="row in rentabilidadClientes" :key="row.id" class="rent-row">
@@ -875,6 +918,9 @@ const rentabilidadClientes = computed(() => {
             <span class="ta-r" :style="{ color: row.pendiente > 0 ? '#ffa500' : 'inherit' }">{{ formatEur(row.pendiente) }}</span>
             <span class="ta-r muted">{{ formatEur(row.coste) }}</span>
             <span class="ta-r muted">{{ row.cac > 0 ? formatEur(row.cac) : '—' }}</span>
+            <span class="ta-r" :style="{ color: (row.cobrado - row.costoTotal) >= 0 ? '#4ade80' : '#f87171' }">
+              {{ formatEur(row.cobrado - row.costoTotal) }}
+            </span>
             <span class="ta-r">
               <span class="margen-pill" :class="{ high: row.margen >= 50, mid: row.margen >= 30 && row.margen < 50, low: row.margen < 30 }">
                 {{ row.margen }}%
@@ -1336,10 +1382,29 @@ const rentabilidadClientes = computed(() => {
 .cf-dot.vencido   { background: #ff4444; }
 
 /* Rentabilidad por cliente */
+.rent-filters { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1rem; }
+.rent-periodo-btns { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.periodo-btn {
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-lighter);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.periodo-btn:hover  { border-color: var(--color-primary); color: var(--color-text-light); }
+.periodo-btn.active { border-color: var(--color-primary); background: rgba(227,255,4,0.1); color: var(--color-primary); font-weight: 700; }
+.rent-custom-range  { display: flex; align-items: center; gap: 0.5rem; }
+.rent-date-input    { padding: 0.4rem 0.7rem !important; font-size: 0.85rem !important; width: auto; }
+.rent-range-sep     { color: var(--color-text-muted); }
+
 .rent-table { display: flex; flex-direction: column; gap: 0; }
 .rent-header {
   display: grid;
-  grid-template-columns: 1fr repeat(6, 100px);
+  grid-template-columns: 1fr repeat(7, 90px);
   gap: 0.5rem;
   padding: 0.4rem 0.5rem;
   font-size: 0.75rem;
@@ -1351,7 +1416,7 @@ const rentabilidadClientes = computed(() => {
 }
 .rent-row {
   display: grid;
-  grid-template-columns: 1fr repeat(6, 100px);
+  grid-template-columns: 1fr repeat(7, 90px);
   gap: 0.5rem;
   padding: 0.65rem 0.5rem;
   font-size: 0.88rem;
@@ -1375,12 +1440,8 @@ const rentabilidadClientes = computed(() => {
 
 @media (max-width: 768px) {
   .rent-header, .rent-row { grid-template-columns: 1fr 80px 70px; }
-  .rent-header span:nth-child(3),
-  .rent-header span:nth-child(4),
-  .rent-header span:nth-child(5),
-  .rent-row span:nth-child(3),
-  .rent-row span:nth-child(4),
-  .rent-row span:nth-child(5) { display: none; }
+  .rent-header span:nth-child(n+3):nth-child(-n+7),
+  .rent-row span:nth-child(n+3):nth-child(-n+7) { display: none; }
 }
 /* Plan Personalizado */
 .custom-plan-manager { background: rgba(0,0,0,0.2); border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem; }

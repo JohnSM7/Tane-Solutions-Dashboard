@@ -4,8 +4,10 @@ defineProps<{
     month: string;
     current: number;
     prev: number;
+    gasto: number;
     currentRaw: number;
     prevRaw: number;
+    gastoRaw: number;
   }[];
 }>();
 
@@ -16,7 +18,8 @@ const fmt = (n: number) =>
 <template>
   <div class="chart-wrap">
     <div class="chart-legend">
-      <span class="legend-dot current"></span><span>Este año</span>
+      <span class="legend-dot current"></span><span>Facturado</span>
+      <span class="legend-dot gasto"></span><span>Gastos</span>
       <span class="legend-dot prev"></span><span>Año anterior</span>
     </div>
 
@@ -34,7 +37,12 @@ const fmt = (n: number) =>
           <div
             class="bar bar-current"
             :style="{ height: col.current + '%' }"
-            :title="`Este año: ${fmt(col.currentRaw)}`"
+            :title="`Facturado: ${fmt(col.currentRaw)}`"
+          ></div>
+          <div
+            class="bar bar-gasto"
+            :style="{ height: col.gasto + '%' }"
+            :title="`Gastos: ${fmt(col.gastoRaw)}`"
           ></div>
         </div>
         <span class="bar-label">{{ col.month }}</span>
@@ -54,6 +62,7 @@ const fmt = (n: number) =>
   width: 10px; height: 10px; border-radius: 2px; display: inline-block;
 }
 .legend-dot.current { background: var(--color-primary); }
+.legend-dot.gasto   { background: #f87171; }
 .legend-dot.prev    { background: #3a3a3a; }
 
 .bars {
@@ -102,8 +111,10 @@ const fmt = (n: number) =>
 }
 .bar-prev    { background: #2a2a2a; border: 1px solid #3a3a3a; }
 .bar-current { background: var(--color-primary); opacity: 0.9; }
+.bar-gasto   { background: #f87171; opacity: 0.85; }
 .bar-current:hover { opacity: 1; }
 .bar-prev:hover    { background: #3a3a3a; }
+.bar-gasto:hover   { opacity: 1; }
 
 .bar-label {
   font-size: 0.7rem;

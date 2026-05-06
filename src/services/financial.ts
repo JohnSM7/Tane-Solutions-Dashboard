@@ -506,15 +506,20 @@ export function useFinancialData() {
       const prev = facturas.value
         .filter(f => f.estado === 'Pagada' && new Date(f.fecha_emision).getMonth() === m && new Date(f.fecha_emision).getFullYear() === y - 1)
         .reduce((s, f) => s + f.importe, 0);
-      return { month, current, prev };
+      const gasto = gastos.value
+        .filter(g => { const gd = new Date(g.fecha); return gd.getMonth() === m && gd.getFullYear() === y; })
+        .reduce((s, g) => s + g.importe, 0);
+      return { month, current, prev, gasto };
     });
-    const max = Math.max(...values.flatMap(v => [v.current, v.prev]), 1);
+    const max = Math.max(...values.flatMap(v => [v.current, v.prev, v.gasto]), 1);
     return values.map(v => ({
       month: v.month,
       current: Math.round(v.current / max * 100),
       prev: Math.round(v.prev / max * 100),
+      gasto: Math.round(v.gasto / max * 100),
       currentRaw: v.current,
       prevRaw: v.prev,
+      gastoRaw: v.gasto,
     }));
   });
 
