@@ -5,7 +5,8 @@ import DashboardCard from '../components/DashboardCard.vue';
 import ClientReportGenerator from '../components/ClientReportGenerator.vue';
 import { useClientProfile, computeHealthScore, healthColor, healthLabel, type Sede } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
-import { listarInformes, eliminarInforme, type InformeGuardado } from '../services/reportes';
+import { type InformeGuardado } from '../services/reportes';
+import { type CuentaCliente } from '../services/clients';
 import { useGmbHistorico, tomarSnapshot } from '../services/gmbHistorico';
 import GmbChart from '../components/GmbChart.vue';
 import { generarInformeMensualPDF } from '../services/informeMensual';
@@ -17,6 +18,7 @@ const {
   financials, loading,
   saveProfile, addSede, updateSede, deleteSede,
   uploadDocumento, deleteDocumento,
+  cuentas, addCuenta, updateCuenta, deleteCuenta,
 } = useClientProfile(clientId);
 
 // ── Filtro de sede ────────────────────────────────────────────────────────────
@@ -139,42 +141,48 @@ const confirmDeleteDoc = async (doc: any) => {
   await deleteDocumento(doc);
 };
 
-// ── Historial de Informes ───────────────────────────────────────────────────
-const informesGuardados = ref<InformeGuardado[]>([]);
-const cargandoInformes = ref(true);
+// ── Cuentas asociadas ─────────────────────────────────────────────────────────
+const showCuentaModal = ref(false);
+const savingCuenta = ref(false);
+const editingCuentaId = ref<string | null>(null);
+const cuentaForm = ref({ titulo: '', url: '', usuario: '', password: '' });
+const showCuentaPass = ref(false);
 
-const fetchInformes = async () => {
+const openNewCuenta = () => {
+  editingCuentaId.value = null;
+  cuentaForm.value = { titulo: '', url: '', usuario: '', password: '' };
+  showCuentaPass.value = false;
+  showCuentaModal.value = true;
+};
+const openEditCuenta = (c: CuentaCliente) => {
+  editingCuentaId.value = c.id;
+  cuentaForm.value = { titulo: c.titulo, url: c.url, usuario: c.usuario, password: c.password };
+  showCuentaPass.value = false;
+  showCuentaModal.value = true;
+};
+const saveCuenta = async () => {
+  if (!cuentaForm.value.titulo.trim()) return;
+  savingCuenta.value = true;
   try {
-    informesGuardados.value = await listarInformes(clientId);
-  } catch (err) {
-    console.error('Error al cargar informes:', err);
+    if (editingCuentaId.value) {
+      await updateCuenta(editingCuentaId.value, cuentaForm.value);
+    } else {
+      await addCuenta(cuentaForm.value);
+    }
+    showCuentaModal.value = false;
+  } catch (err: any) {
+    alert('Error al guardar: ' + (err?.message ?? ''));
   } finally {
-    cargandoInformes.value = false;
+    savingCuenta.value = false;
   }
 };
-
-fetchInformes();
-
-const handleDeleteInforme = async (inf: InformeGuardado) => {
-  if (!confirm(`¿Eliminar el informe "${inf.titulo}"? El cliente dejará de verlo.`)) return;
-  try {
-    await eliminarInforme(inf);
-    informesGuardados.value = informesGuardados.value.filter(i => i.id !== inf.id);
-  } catch (err) {
-    alert('Error al eliminar');
-  }
-};
-
-const handleInformeGenerado = () => {
-  fetchInformes(); // Recargar lista al generar uno nuevo
+const confirmDeleteCuenta = async (c: CuentaCliente) => {
+  if (!confirm(`¿Eliminar la cuenta "${c.titulo}"?`)) return;
+  await deleteCuenta(c.id);
 };
 
 // ── Visualizar informe detallado ───────────────────────────────────────────────
 const selectedInforme = ref<InformeGuardado | null>(null);
-
-const abrirInforme = (inf: InformeGuardado) => {
-  selectedInforme.value = inf;
-};
 
 const totalHorasDetalle = (inf: InformeGuardado) =>
   (inf.contenido?.tareas ?? []).reduce((s, t) => s + (t.horas ?? 0), 0);
@@ -376,7 +384,6 @@ const formatDate = (iso: string) =>
                 :clienteLogo="clientData!.logo || undefined"
                 :clienteCif="clientData!.cif || undefined"
                 :proyectoNombre="filteredProyectos[0]?.nombre"
-                @generado="handleInformeGenerado"
               />
             </Transition>
 
@@ -399,33 +406,28 @@ const formatDate = (iso: string) =>
             </div>
           </DashboardCard>
 
-          <!-- ─────────────────────────────────────────────────── -->
-          <!-- HISTORIAL DE INFORMES                               -->
-          <!-- ─────────────────────────────────────────────────── -->
-          <DashboardCard title="Historial de Informes de Trabajo">
+          <!-- Cuentas asociadas -->
+          <DashboardCard title="Cuentas Asociadas">
             <template #actions>
-              <div v-if="cargandoInformes" class="loading-spinner-sm"></div>
+              <button class="btn-outline" @click="openNewCuenta">+ Añadir cuenta</button>
             </template>
-            
-            <div v-if="informesGuardados.length === 0" class="empty-state">
-              No hay informes guardados para este cliente.
-            </div>
-            
+            <div v-if="cuentas.length === 0" class="empty-state">Sin cuentas registradas</div>
             <ul v-else class="docs-list">
-              <li v-for="inf in informesGuardados" :key="inf.id" class="doc-item">
+              <li v-for="c in cuentas" :key="c.id" class="doc-item">
                 <div class="doc-info">
-                  <span class="doc-icon">📊</span>
+                  <span class="doc-icon">🔑</span>
                   <div class="doc-meta">
-                    <span class="doc-name">{{ inf.titulo }}</span>
-                    <span class="doc-details">
-                      {{ inf.proyecto }} · {{ new Date(inf.creado_en).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }) }}
-                    </span>
+                    <span class="doc-name">{{ c.titulo }}</span>
+                    <div class="cuenta-fields">
+                      <span v-if="c.url" class="cuenta-field"><a :href="c.url" target="_blank" rel="noopener" class="link-url">{{ c.url }}</a></span>
+                      <span class="cuenta-field"><span class="cuenta-label">Usuario:</span> {{ c.usuario || '—' }}</span>
+                      <span class="cuenta-field"><span class="cuenta-label">Contraseña:</span> {{ c.password || '—' }}</span>
+                    </div>
                   </div>
                 </div>
                 <div class="doc-actions">
-                  <button @click="abrirInforme(inf)" class="btn-text">👁️ Ver</button>
-                  <a :href="inf.url_pdf" target="_blank" class="btn-icon" title="Ver PDF">📄</a>
-                  <button class="btn-icon delete" @click="handleDeleteInforme(inf)" title="Eliminar">🗑️</button>
+                  <button class="btn-icon" title="Editar" @click="openEditCuenta(c)">✏️</button>
+                  <button class="btn-icon delete" title="Eliminar" @click="confirmDeleteCuenta(c)">🗑️</button>
                 </div>
               </li>
             </ul>
@@ -598,6 +600,29 @@ const formatDate = (iso: string) =>
 
     <div v-else class="loading-state">Cliente no encontrado.</div>
 
+    <!-- Modal: Cuenta asociada -->
+    <div class="modal-overlay" v-if="showCuentaModal">
+      <div class="modal-box">
+        <p class="modal-title">{{ editingCuentaId ? 'Editar Cuenta' : 'Nueva Cuenta' }}</p>
+        <div class="form-group"><label>Título *</label><input v-model="cuentaForm.titulo" class="form-input" placeholder="Ej: Instagram, Gmail, cPanel..." /></div>
+        <div class="form-group"><label>URL</label><input v-model="cuentaForm.url" class="form-input" type="url" placeholder="https://..." /></div>
+        <div class="form-row">
+          <div class="form-group"><label>Usuario</label><input v-model="cuentaForm.usuario" class="form-input" placeholder="usuario@ejemplo.com" /></div>
+          <div class="form-group">
+            <label>Contraseña</label>
+            <div class="pass-input-wrap">
+              <input v-model="cuentaForm.password" :type="showCuentaPass ? 'text' : 'password'" class="form-input" placeholder="••••••••" />
+              <button type="button" class="pass-toggle" @click="showCuentaPass = !showCuentaPass">{{ showCuentaPass ? '🙈' : '👁️' }}</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-text" @click="showCuentaModal = false">Cancelar</button>
+          <button class="btn-primary" @click="saveCuenta" :disabled="savingCuenta || !cuentaForm.titulo.trim()">{{ savingCuenta ? 'Guardando...' : 'Guardar' }}</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal: Editar perfil -->
     <div class="modal-overlay" v-if="showEditModal" @click.self="showEditModal = false">
       <div class="modal-box">
@@ -752,6 +777,13 @@ const formatDate = (iso: string) =>
 .doc-meta { display: flex; flex-direction: column; overflow: hidden; }
 .doc-name { font-weight: 600; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .doc-details { font-size: 0.78rem; color: var(--color-text-muted); }
+.cuenta-fields { display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.2rem; }
+.cuenta-field { font-size: 0.78rem; color: var(--color-text-muted); }
+.cuenta-label { font-weight: 600; color: var(--color-text-muted); }
+.link-url { font-size: 0.78rem; color: var(--color-primary); text-decoration: underline; word-break: break-all; }
+.pass-input-wrap { position: relative; display: flex; align-items: center; }
+.pass-input-wrap .form-input { padding-right: 2.5rem; flex: 1; }
+.pass-toggle { position: absolute; right: 0.6rem; background: none; border: none; cursor: pointer; font-size: 1rem; padding: 0; }
 .doc-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
 .btn-icon { background: rgba(255,255,255,0.08); padding: 0.4rem; border-radius: 4px; border: none; cursor: pointer; text-decoration: none; font-size: 1rem; }
 .btn-icon:hover { background: rgba(255,255,255,0.18); }

@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed } from 'vue';
 import DashboardCard from '../components/DashboardCard.vue';
 import ClientReportModule from '../components/ClientReportModule.vue';
 import { authStore } from '../store/auth';
-import { useClientProfile } from '../services/clients';
+import { useClientProfile, type CuentaCliente } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
-import { listarInformes, type InformeGuardado } from '../services/reportes';
 import { generateInvoicePDF, type Factura } from '../services/financial';
 import { createTicket, useClientTickets } from '../services/support';
 import { useToast } from '../composables/useToast';
+import { supabase } from '../supabase';
 
 const clientId = authStore.user?.clientId ?? '';
 const {
-  clientData, proyectos, sedes, documentos, facturas,
+  clientData, proyectos, sedes, documentos, facturas, cuentas,
   financials, loading,
   uploadDocumento, saveProfile,
 } = useClientProfile(clientId);
@@ -20,6 +20,51 @@ const {
 const toast = useToast();
 
 const { tickets: misTickets } = useClientTickets(clientId);
+
+// ── Cuentas asociadas — revelado con verificación ─────────────────────────────
+const cuentasDesbloqueadas = ref(false);   // true tras verificar contraseña una vez
+const revealedIds = ref<Set<string>>(new Set());
+const showVerifyModal = ref(false);
+const pendingRevealId = ref<string | null>(null);
+const verifyInput = ref('');
+const verifyError = ref('');
+const verifyLoading = ref(false);
+
+const toggleReveal = (c: CuentaCliente) => {
+  if (revealedIds.value.has(c.id)) {
+    revealedIds.value = new Set([...revealedIds.value].filter(id => id !== c.id));
+    return;
+  }
+  if (cuentasDesbloqueadas.value) {
+    revealedIds.value = new Set([...revealedIds.value, c.id]);
+    return;
+  }
+  pendingRevealId.value = c.id;
+  verifyInput.value = '';
+  verifyError.value = '';
+  showVerifyModal.value = true;
+};
+
+const confirmarVerificacion = async () => {
+  if (!verifyInput.value) return;
+  verifyLoading.value = true;
+  verifyError.value = '';
+  try {
+    const email = authStore.user?.email ?? '';
+    const { error } = await supabase.auth.signInWithPassword({ email, password: verifyInput.value });
+    if (error) throw error;
+    cuentasDesbloqueadas.value = true;
+    if (pendingRevealId.value) {
+      revealedIds.value = new Set([...revealedIds.value, pendingRevealId.value]);
+      pendingRevealId.value = null;
+    }
+    showVerifyModal.value = false;
+  } catch {
+    verifyError.value = 'Contraseña incorrecta. Inténtalo de nuevo.';
+  } finally {
+    verifyLoading.value = false;
+  }
+};
 
 const PROGRESO_ESTADO: Record<string, number> = {
   'Planificado': 5, 'En curso': 50, 'En riesgo': 40,
@@ -151,36 +196,6 @@ const handleFileChange = async (e: Event) => {
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('es', { day: '2-digit', month: 'short', year: '2-digit' });
-
-const formatDateLong = (iso: string) =>
-  new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
-
-// ── Informes del cliente ───────────────────────────────────────────────────────
-const informes = ref<InformeGuardado[]>([]);
-const cargandoInformes = ref(true);
-
-onMounted(async () => {
-  if (clientId) {
-    try {
-      informes.value = await listarInformes(clientId);
-    } catch { /* tabla puede no existir */ }
-  }
-  cargandoInformes.value = false;
-});
-
-// ── Visualizar informe detallado ───────────────────────────────────────────────
-const selectedInforme = ref<InformeGuardado | null>(null);
-
-const abrirInforme = (inf: InformeGuardado) => {
-  selectedInforme.value = inf;
-};
-
-const totalHoras = (inf: InformeGuardado) =>
-  (inf.contenido?.tareas ?? []).reduce((s, t) => s + (t.horas ?? 0), 0);
-
-const estadoColor: Record<string, string> = {
-  'Completada': '#4ade80', 'En progreso': '#ffa500', 'Pendiente': '#888',
-};
 </script>
 
 <template>
@@ -312,6 +327,60 @@ const estadoColor: Record<string, string> = {
         </DashboardCard>
       </div>
 
+      <!-- Cuentas Asociadas -->
+      <DashboardCard v-if="cuentas.length > 0" title="Cuentas Asociadas">
+        <ul class="cuentas-list">
+          <li v-for="c in cuentas" :key="c.id" class="cuenta-item">
+            <div class="cuenta-header">
+              <span class="cuenta-titulo">🔑 {{ c.titulo }}</span>
+              <a v-if="c.url" :href="c.url" target="_blank" rel="noopener" class="cuenta-link-btn" title="Abrir">↗</a>
+            </div>
+            <div class="cuenta-row" v-if="c.usuario">
+              <span class="cuenta-label">Usuario</span>
+              <span class="cuenta-val">{{ revealedIds.has(c.id) ? c.usuario : '••••••••••••' }}</span>
+              <button class="reveal-btn" @click="toggleReveal(c)" :title="revealedIds.has(c.id) ? 'Ocultar' : 'Revelar'">
+                {{ revealedIds.has(c.id) ? '🙈' : '👁️' }}
+              </button>
+            </div>
+            <div class="cuenta-row" v-if="c.password">
+              <span class="cuenta-label">Contraseña</span>
+              <span class="cuenta-val">{{ revealedIds.has(c.id) ? c.password : '••••••••••••' }}</span>
+              <button v-if="!c.usuario" class="reveal-btn" @click="toggleReveal(c)" :title="revealedIds.has(c.id) ? 'Ocultar' : 'Revelar'">
+                {{ revealedIds.has(c.id) ? '🙈' : '👁️' }}
+              </button>
+            </div>
+          </li>
+        </ul>
+      </DashboardCard>
+
+      <!-- Modal: Verificar identidad -->
+      <div class="modal-overlay" v-if="showVerifyModal" @click.self="showVerifyModal = false">
+        <div class="modal-box">
+          <p class="modal-title">🔒 Verificar identidad</p>
+          <p style="color:var(--color-text-muted);font-size:0.88rem;margin-bottom:1.25rem;">
+            Introduce tu contraseña para revelar las credenciales. Solo se pedirá una vez por sesión.
+          </p>
+          <div class="form-group">
+            <label>Contraseña de tu cuenta</label>
+            <input
+              v-model="verifyInput"
+              type="password"
+              class="form-input"
+              placeholder="••••••••"
+              @keyup.enter="confirmarVerificacion"
+              autofocus
+            />
+          </div>
+          <p v-if="verifyError" class="error-msg">{{ verifyError }}</p>
+          <div class="modal-actions">
+            <button class="btn-text" @click="showVerifyModal = false">Cancelar</button>
+            <button class="btn-primary" @click="confirmarVerificacion" :disabled="verifyLoading || !verifyInput">
+              {{ verifyLoading ? 'Verificando...' : 'Verificar' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Módulo de Informes de Trabajo -->
       <ClientReportModule
         :client-id="clientId"
@@ -372,115 +441,9 @@ const estadoColor: Record<string, string> = {
         </div>
       </div>
 
-      <!-- Informes de trabajo -->
-      <div v-if="!cargandoInformes && informes.length > 0" class="informes-section">
-        <h3 class="section-title">📊 Informes de Trabajo</h3>
-        <div class="informes-grid">
-          <div v-for="inf in informes" :key="inf.id" class="informe-card">
-            <div class="informe-icon">📄</div>
-            <div class="informe-body">
-              <strong class="informe-titulo">{{ inf.titulo }}</strong>
-              <div class="informe-meta">
-                <span>{{ inf.proyecto }}</span>
-                <span v-if="inf.periodo"> · {{ inf.periodo }}</span>
-              </div>
-              <small class="informe-fecha">{{ formatDateLong(inf.creado_en) }}</small>
-            </div>
-            <div class="informe-actions">
-              <button @click="abrirInforme(inf)" class="btn-text">👁️ Ver Informe</button>
-              <a :href="inf.url_pdf" target="_blank" class="btn-download">
-                ⬇️ PDF
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
     </template>
 
-    <!-- Modal: Detalle del Informe -->
-    <div v-if="selectedInforme" class="modal-overlay report-detail-overlay" @click.self="selectedInforme = null">
-      <div class="modal-box report-modal">
-        <div class="report-modal-header">
-          <div class="report-modal-title">
-            <h2>{{ selectedInforme.titulo }}</h2>
-            <p>{{ selectedInforme.proyecto }} · {{ selectedInforme.periodo || 'General' }}</p>
-          </div>
-          <button class="btn-close" @click="selectedInforme = null">✕</button>
-        </div>
-
-        <div class="report-modal-content scrollable">
-          <div class="rg-preview-titulo">{{ selectedInforme.contenido?.tituloInforme || selectedInforme.titulo }}</div>
-
-          <div class="report-section" v-if="selectedInforme.contenido?.descripcionGeneral">
-            <label>DESCRIPCIÓN DEL PROYECTO</label>
-            <p>{{ selectedInforme.contenido.descripcionGeneral }}</p>
-          </div>
-
-          <div class="report-section" v-if="selectedInforme.contenido?.objetivos?.length">
-            <label>OBJETIVOS</label>
-            <ul class="client-steps-dots">
-              <li v-for="o in selectedInforme.contenido.objetivos" :key="o">{{ o }}</li>
-            </ul>
-          </div>
-
-          <div class="report-section" v-if="selectedInforme.contenido?.resumenEjecutivo">
-            <label>RESUMEN EJECUTIVO</label>
-            <p class="resumen-text-box">{{ selectedInforme.contenido.resumenEjecutivo }}</p>
-          </div>
-
-          <div class="report-section" v-if="selectedInforme.contenido?.kpis?.length">
-            <label>RESULTADOS Y MÉTRICAS</label>
-            <div class="client-kpi-grid">
-              <div v-for="k in selectedInforme.contenido.kpis" :key="k.label" class="client-kpi-card">
-                <span class="client-kpi-val">{{ k.value }}</span>
-                <span class="client-kpi-label">{{ k.label }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="report-section" v-if="selectedInforme.contenido?.tareas?.length">
-            <label>TRABAJOS REALIZADOS ({{ totalHoras(selectedInforme) }}h totales)</label>
-            <div class="client-tareas-list">
-              <div v-for="t in selectedInforme.contenido.tareas" :key="t.titulo" class="client-tarea-item">
-                <div class="client-tarea-dot" :style="{ background: estadoColor[t.estado || 'Completada'] }"></div>
-                <div class="client-tarea-text">
-                  <strong>{{ t.titulo }}</strong>
-                  <p>{{ t.descripcion }}</p>
-                </div>
-                <div class="client-tarea-hours" v-if="t.horas">{{ t.horas }}h</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="report-section" v-if="selectedInforme.contenido?.imagenesAdjuntas?.length">
-            <label>MATERIAL VISUAL ({{ selectedInforme.contenido.imagenesAdjuntas.length }} imágenes)</label>
-            <div class="client-gallery">
-              <img v-for="img in selectedInforme.contenido.imagenesAdjuntas" :key="img.nombre" :src="img.base64" :alt="img.nombre" />
-            </div>
-          </div>
-
-          <div class="report-double-grid">
-            <div class="report-section" v-if="selectedInforme.contenido?.conclusiones">
-              <label>CONCLUSIONES</label>
-              <p>{{ selectedInforme.contenido.conclusiones }}</p>
-            </div>
-            <div class="report-section" v-if="selectedInforme.contenido?.proximosPasos?.length">
-              <label>PRÓXIMOS PASOS</label>
-              <ol class="client-steps-ordered">
-                <li v-for="step in selectedInforme.contenido.proximosPasos" :key="step">{{ step }}</li>
-              </ol>
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-actions">
-          <a :href="selectedInforme.url_pdf" target="_blank" class="btn-primary">📄 Descargar PDF</a>
-          <button class="btn-text" @click="selectedInforme = null">Cerrar</button>
-        </div>
-      </div>
-    </div>
-
-    <div v-else class="loading-state">No se encontró tu perfil. Contacta con la agencia.</div>
+    <div v-if="!loading && !clientData" class="loading-state">No se encontró tu perfil. Contacta con la agencia.</div>
 
     <!-- Modal: Abrir ticket de soporte -->
     <div class="modal-overlay" v-if="showTicketModal" @click.self="showTicketModal = false">
@@ -642,6 +605,18 @@ const estadoColor: Record<string, string> = {
 .upload-icon { font-size: 1.8rem; margin-bottom: 0.3rem; }
 .upload-hint { font-size: 0.8rem; color: var(--color-text-muted); display: block; margin-top: 0.25rem; }
 .error-msg { color: #ff4444; font-size: 0.85rem; margin-bottom: 0.75rem; }
+/* Cuentas */
+.cuentas-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.cuenta-item { background: var(--color-bg-lighter); border-radius: 8px; padding: 0.85rem 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.cuenta-header { display: flex; align-items: center; justify-content: space-between; }
+.cuenta-titulo { font-weight: 700; font-size: 0.95rem; color: var(--color-text-light); }
+.cuenta-link-btn { background: transparent; border: 1px solid var(--color-border); color: var(--color-text-muted); border-radius: 4px; padding: 0.15rem 0.5rem; font-size: 0.8rem; cursor: pointer; text-decoration: none; }
+.cuenta-link-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.cuenta-row { display: flex; align-items: center; gap: 0.75rem; }
+.cuenta-label { font-size: 0.75rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; min-width: 80px; }
+.cuenta-val { font-family: monospace; font-size: 0.9rem; color: var(--color-text-light); flex: 1; letter-spacing: 0.05em; }
+.reveal-btn { background: transparent; border: none; cursor: pointer; font-size: 1rem; padding: 0.1rem 0.3rem; border-radius: 4px; opacity: 0.7; }
+.reveal-btn:hover { opacity: 1; background: rgba(255,255,255,0.08); }
 .docs-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .doc-item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: var(--color-bg-lighter); border-radius: 8px; }
 .doc-info { display: flex; gap: 0.75rem; align-items: center; overflow: hidden; flex: 1; }
