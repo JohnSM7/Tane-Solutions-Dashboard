@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import DashboardCard from '../components/DashboardCard.vue';
 import ClientReportGenerator from '../components/ClientReportGenerator.vue';
+import ClientReportModule from '../components/ClientReportModule.vue';
 import { useClientProfile, computeHealthScore, healthColor, healthLabel, type Sede } from '../services/clients';
 import { ESTADO_COLORS } from '../services/operations';
 import { type InformeGuardado } from '../services/reportes';
@@ -317,6 +318,33 @@ const formatDate = (iso: string) =>
             <p v-else class="empty-state">Sin facturas registradas</p>
           </DashboardCard>
 
+          <!-- Cuentas asociadas -->
+          <DashboardCard title="Cuentas Asociadas">
+            <template #actions>
+              <button class="btn-outline" @click="openNewCuenta">+ Añadir cuenta</button>
+            </template>
+            <div v-if="cuentas.length === 0" class="empty-state">Sin cuentas registradas</div>
+            <ul v-else class="docs-list">
+              <li v-for="c in cuentas" :key="c.id" class="doc-item">
+                <div class="doc-info">
+                  <span class="doc-icon">🔑</span>
+                  <div class="doc-meta">
+                    <span class="doc-name">{{ c.titulo }}</span>
+                    <div class="cuenta-fields">
+                      <span v-if="c.url" class="cuenta-field"><a :href="c.url" target="_blank" rel="noopener" class="link-url">{{ c.url }}</a></span>
+                      <span class="cuenta-field"><span class="cuenta-label">Usuario:</span> {{ c.usuario || '—' }}</span>
+                      <span class="cuenta-field"><span class="cuenta-label">Contraseña:</span> {{ c.password || '—' }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="doc-actions">
+                  <button class="btn-icon" title="Editar" @click="openEditCuenta(c)">✏️</button>
+                  <button class="btn-icon delete" title="Eliminar" @click="confirmDeleteCuenta(c)">🗑️</button>
+                </div>
+              </li>
+            </ul>
+          </DashboardCard>
+
           <!-- Proyectos activos -->
           <DashboardCard title="Proyectos Activos">
             <div v-if="filteredProyectos.length === 0" class="empty-state">Sin proyectos para esta sede</div>
@@ -404,33 +432,6 @@ const formatDate = (iso: string) =>
                 ✨ Generar Informe con IA →
               </button>
             </div>
-          </DashboardCard>
-
-          <!-- Cuentas asociadas -->
-          <DashboardCard title="Cuentas Asociadas">
-            <template #actions>
-              <button class="btn-outline" @click="openNewCuenta">+ Añadir cuenta</button>
-            </template>
-            <div v-if="cuentas.length === 0" class="empty-state">Sin cuentas registradas</div>
-            <ul v-else class="docs-list">
-              <li v-for="c in cuentas" :key="c.id" class="doc-item">
-                <div class="doc-info">
-                  <span class="doc-icon">🔑</span>
-                  <div class="doc-meta">
-                    <span class="doc-name">{{ c.titulo }}</span>
-                    <div class="cuenta-fields">
-                      <span v-if="c.url" class="cuenta-field"><a :href="c.url" target="_blank" rel="noopener" class="link-url">{{ c.url }}</a></span>
-                      <span class="cuenta-field"><span class="cuenta-label">Usuario:</span> {{ c.usuario || '—' }}</span>
-                      <span class="cuenta-field"><span class="cuenta-label">Contraseña:</span> {{ c.password || '—' }}</span>
-                    </div>
-                  </div>
-                </div>
-                <div class="doc-actions">
-                  <button class="btn-icon" title="Editar" @click="openEditCuenta(c)">✏️</button>
-                  <button class="btn-icon delete" title="Eliminar" @click="confirmDeleteCuenta(c)">🗑️</button>
-                </div>
-              </li>
-            </ul>
           </DashboardCard>
         </div>
 
@@ -598,7 +599,7 @@ const formatDate = (iso: string) =>
       </div>
     </div>
 
-    <div v-else class="loading-state">Cliente no encontrado.</div>
+    <div v-if="!loading && !clientData" class="loading-state">Cliente no encontrado.</div>
 
     <!-- Modal: Cuenta asociada -->
     <div class="modal-overlay" v-if="showCuentaModal">
