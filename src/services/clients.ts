@@ -3,6 +3,16 @@ import { supabase } from '../supabase';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+export type CuentaCliente = {
+  id: string;
+  cliente_id: string;
+  titulo: string;
+  url: string;
+  usuario: string;
+  password: string;
+  created_at: string;
+};
+
 export type Cliente = {
   id: string;
   nombre: string;
@@ -193,6 +203,7 @@ export function useClientProfile(clientId: string) {
   const documentos = ref<Documento[]>([]);
   const usuarios = ref<UsuarioPerfil[]>([]);
   const leads = ref<any[]>([]);
+  const cuentas = ref<CuentaCliente[]>([]);
   const loading = ref(true);
 
   const financials = computed(() => {
@@ -215,7 +226,8 @@ export function useClientProfile(clientId: string) {
     supabase.from('documentos').select('*').eq('cliente_id', clientId).order('creado_en', { ascending: false }),
     supabase.from('usuarios').select('id, nombre, rol').eq('cliente_id', clientId),
     supabase.from('leads').select('*').eq('cliente_id', clientId).order('fecha_creacion', { ascending: false }),
-  ]).then(([clientRes, facturasRes, proyectosRes, sedesRes, docsRes, usersRes, leadsRes]) => {
+    supabase.from('cuentas_cliente').select('*').eq('cliente_id', clientId).order('created_at'),
+  ]).then(([clientRes, facturasRes, proyectosRes, sedesRes, docsRes, usersRes, leadsRes, cuentasRes]) => {
     if (clientRes.error) console.error('[useClientProfile] Error fetch cliente:', clientRes.error);
     clientData.value = clientRes.data ? mapCliente(clientRes.data as Cliente) : null;
     facturas.value = facturasRes.data ?? [];
@@ -224,6 +236,7 @@ export function useClientProfile(clientId: string) {
     documentos.value = (docsRes.data ?? []) as Documento[];
     usuarios.value = (usersRes.data ?? []) as UsuarioPerfil[];
     leads.value = leadsRes.data ?? [];
+    cuentas.value = (cuentasRes.data ?? []) as CuentaCliente[];
   })
   .catch(err => console.error('[useClientProfile] Catch error:', err))
   .finally(() => { clearTimeout(loadingGuard); loading.value = false; });
@@ -318,11 +331,33 @@ export function useClientProfile(clientId: string) {
     documentos.value = documentos.value.filter(d => d.id !== doc.id);
   };
 
+  const addCuenta = async (form: { titulo: string; url: string; usuario: string; password: string }) => {
+    const { data, error } = await supabase.from('cuentas_cliente').insert({
+      cliente_id: clientId, ...form,
+    }).select().single();
+    if (error) throw error;
+    cuentas.value.push(data as CuentaCliente);
+  };
+
+  const updateCuenta = async (id: string, form: Partial<{ titulo: string; url: string; usuario: string; password: string }>) => {
+    const { error } = await supabase.from('cuentas_cliente').update(form).eq('id', id);
+    if (error) throw error;
+    const idx = cuentas.value.findIndex(c => c.id === id);
+    if (idx !== -1) Object.assign(cuentas.value[idx]!, form);
+  };
+
+  const deleteCuenta = async (id: string) => {
+    const { error } = await supabase.from('cuentas_cliente').delete().eq('id', id);
+    if (error) throw error;
+    cuentas.value = cuentas.value.filter(c => c.id !== id);
+  };
+
   return {
-    clientData, facturas, proyectos, sedes, documentos, usuarios, leads,
+    clientData, facturas, proyectos, sedes, documentos, usuarios, leads, cuentas,
     financials, loading,
     saveProfile, addSede, updateSede, deleteSede,
     uploadDocumento, deleteDocumento,
+    addCuenta, updateCuenta, deleteCuenta,
   };
 }
 

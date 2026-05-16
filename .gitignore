@@ -17,6 +17,9 @@ dist-ssr
 .env.local
 .env.*.local
 
+# Claude Code local settings (may contain tokens)
+.claude/settings.local.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -27,3 +30,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# vue-tsc compilation artifacts (generated alongside source files)
+src/**/*.vue.js
+src/**/*.js

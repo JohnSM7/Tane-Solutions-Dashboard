@@ -8,10 +8,12 @@ import { useClientProfile, computeHealthScore, healthColor, healthLabel, type Se
 import { ESTADO_COLORS } from '../services/operations';
 import { ESTADO_COLORS as LEAD_ESTADO_COLORS } from '../services/commercial';
 import { type InformeGuardado } from '../services/reportes';
+import { type CuentaCliente } from '../services/clients';
 import { useGmbHistorico, tomarSnapshot } from '../services/gmbHistorico';
 import GmbChart from '../components/GmbChart.vue';
 import { generarInformeMensualPDF } from '../services/informeMensual';
 import { useToast } from '../composables/useToast';
+import { supabase } from '../supabase';
 
 const route = useRoute();
 const router = useRouter();
@@ -22,6 +24,7 @@ const {
   financials, loading,
   saveProfile, addSede, updateSede, deleteSede,
   uploadDocumento, deleteDocumento,
+  cuentas, addCuenta, updateCuenta, deleteCuenta,
 } = useClientProfile(clientId);
 
 function goToCommercial() {
@@ -187,8 +190,6 @@ const saveDocNombre = async (doc: any) => {
 };
 
 // ── Links de cliente ──────────────────────────────────────────────────────────
-import { supabase } from '../supabase';
-
 type LinkCliente = { id: string; titulo: string; url: string; descripcion: string | null };
 const links = ref<LinkCliente[]>([]);
 const linkForm = ref({ titulo: '', url: '', descripcion: '' });
@@ -239,7 +240,6 @@ const saveLink = async () => {
     if (error) throw error;
     links.value.unshift(data as LinkCliente);
 
-    // Notificar a todos los usuarios CLIENT del cliente
     const linkData   = data as LinkCliente;
     const clientName = clientData.value?.name ?? '';
     notifyLinkToClientUsers(clientId, clientName, linkData);
@@ -265,6 +265,46 @@ const startEditLink = (l: LinkCliente) => {
   editingLinkForm.value = { titulo: l.titulo, url: l.url, descripcion: l.descripcion ?? '' };
 };
 const cancelEditLink = () => { editingLinkId.value = null; };
+
+// ── Cuentas asociadas ─────────────────────────────────────────────────────────
+const showCuentaModal = ref(false);
+const savingCuenta = ref(false);
+const editingCuentaId = ref<string | null>(null);
+const cuentaForm = ref({ titulo: '', url: '', usuario: '', password: '' });
+const showCuentaPass = ref(false);
+
+const openNewCuenta = () => {
+  editingCuentaId.value = null;
+  cuentaForm.value = { titulo: '', url: '', usuario: '', password: '' };
+  showCuentaPass.value = false;
+  showCuentaModal.value = true;
+};
+const openEditCuenta = (c: CuentaCliente) => {
+  editingCuentaId.value = c.id;
+  cuentaForm.value = { titulo: c.titulo, url: c.url, usuario: c.usuario, password: c.password };
+  showCuentaPass.value = false;
+  showCuentaModal.value = true;
+};
+const saveCuenta = async () => {
+  if (!cuentaForm.value.titulo.trim()) return;
+  savingCuenta.value = true;
+  try {
+    if (editingCuentaId.value) {
+      await updateCuenta(editingCuentaId.value, cuentaForm.value);
+    } else {
+      await addCuenta(cuentaForm.value);
+    }
+    showCuentaModal.value = false;
+  } catch (err: any) {
+    alert('Error al guardar: ' + (err?.message ?? ''));
+  } finally {
+    savingCuenta.value = false;
+  }
+};
+const confirmDeleteCuenta = async (c: CuentaCliente) => {
+  if (!confirm(`¿Eliminar la cuenta "${c.titulo}"?`)) return;
+  await deleteCuenta(c.id);
+};
 const saveEditLink = async (l: LinkCliente) => {
   if (!editingLinkForm.value.titulo.trim() || !editingLinkForm.value.url.trim()) return;
   const updates = { titulo: editingLinkForm.value.titulo.trim(), url: editingLinkForm.value.url.trim(), descripcion: editingLinkForm.value.descripcion.trim() || null };
@@ -437,6 +477,33 @@ const formatDate = (iso: string) =>
               </div>
             </div>
             <p v-else class="empty-state">Sin facturas registradas</p>
+          </DashboardCard>
+
+          <!-- Cuentas asociadas -->
+          <DashboardCard title="Cuentas Asociadas">
+            <template #actions>
+              <button class="btn-outline" @click="openNewCuenta">+ Añadir cuenta</button>
+            </template>
+            <div v-if="cuentas.length === 0" class="empty-state">Sin cuentas registradas</div>
+            <ul v-else class="docs-list">
+              <li v-for="c in cuentas" :key="c.id" class="doc-item">
+                <div class="doc-info">
+                  <span class="doc-icon">🔑</span>
+                  <div class="doc-meta">
+                    <span class="doc-name">{{ c.titulo }}</span>
+                    <div class="cuenta-fields">
+                      <span v-if="c.url" class="cuenta-field"><a :href="c.url" target="_blank" rel="noopener" class="link-url">{{ c.url }}</a></span>
+                      <span class="cuenta-field"><span class="cuenta-label">Usuario:</span> {{ c.usuario || '—' }}</span>
+                      <span class="cuenta-field"><span class="cuenta-label">Contraseña:</span> {{ c.password || '—' }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="doc-actions">
+                  <button class="btn-icon" title="Editar" @click="openEditCuenta(c)">✏️</button>
+                  <button class="btn-icon delete" title="Eliminar" @click="confirmDeleteCuenta(c)">🗑️</button>
+                </div>
+              </li>
+            </ul>
           </DashboardCard>
 
           <!-- Proyectos activos -->
@@ -620,9 +687,6 @@ const formatDate = (iso: string) =>
               </button>
             </div>
           </DashboardCard>
-
-          <!-- ─────────────────────────────────────────────────── -->
-          <!-- HISTORIAL DE INFORMES                               -->
 
         </div>
 
@@ -811,6 +875,28 @@ const formatDate = (iso: string) =>
 
     <div v-if="!loading && !clientData" class="loading-state">Cliente no encontrado.</div>
 
+    <!-- Modal: Cuenta asociada -->
+    <div class="modal-overlay" v-if="showCuentaModal">
+      <div class="modal-box">
+        <p class="modal-title">{{ editingCuentaId ? 'Editar Cuenta' : 'Nueva Cuenta' }}</p>
+        <div class="form-group"><label>Título *</label><input v-model="cuentaForm.titulo" class="form-input" placeholder="Ej: Instagram, Gmail, cPanel..." /></div>
+        <div class="form-group"><label>URL</label><input v-model="cuentaForm.url" class="form-input" type="url" placeholder="https://..." /></div>
+        <div class="form-row">
+          <div class="form-group"><label>Usuario</label><input v-model="cuentaForm.usuario" class="form-input" placeholder="usuario@ejemplo.com" /></div>
+          <div class="form-group">
+            <label>Contraseña</label>
+            <div class="pass-input-wrap">
+              <input v-model="cuentaForm.password" :type="showCuentaPass ? 'text' : 'password'" class="form-input" placeholder="••••••••" />
+              <button type="button" class="pass-toggle" @click="showCuentaPass = !showCuentaPass">{{ showCuentaPass ? '🙈' : '👁️' }}</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-text" @click="showCuentaModal = false">Cancelar</button>
+          <button class="btn-primary" @click="saveCuenta" :disabled="savingCuenta || !cuentaForm.titulo.trim()">{{ savingCuenta ? 'Guardando...' : 'Guardar' }}</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Modal: Editar perfil -->
     <div class="modal-overlay" v-if="showEditModal">
@@ -1018,6 +1104,13 @@ const formatDate = (iso: string) =>
 .doc-meta { display: flex; flex-direction: column; overflow: hidden; }
 .doc-name { font-weight: 600; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .doc-details { font-size: 0.78rem; color: var(--color-text-muted); }
+.cuenta-fields { display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.2rem; }
+.cuenta-field { font-size: 0.78rem; color: var(--color-text-muted); }
+.cuenta-label { font-weight: 600; color: var(--color-text-muted); }
+.link-url { font-size: 0.78rem; color: var(--color-primary); text-decoration: underline; word-break: break-all; }
+.pass-input-wrap { position: relative; display: flex; align-items: center; }
+.pass-input-wrap .form-input { padding-right: 2.5rem; flex: 1; }
+.pass-toggle { position: absolute; right: 0.6rem; background: none; border: none; cursor: pointer; font-size: 1rem; padding: 0; }
 .doc-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
 .btn-icon { background: rgba(255,255,255,0.08); padding: 0.4rem; border-radius: 4px; border: none; cursor: pointer; text-decoration: none; font-size: 1rem; }
 .btn-icon:hover { background: rgba(255,255,255,0.18); }
